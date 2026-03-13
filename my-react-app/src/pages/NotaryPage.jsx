@@ -8,6 +8,26 @@ import socket from "../socket/socket";
 const EDITOR_WIDTH = 900;
 const EDITOR_HEIGHT = 1300;
 
+const normalizeSessionId = (value) => {
+  if (!value) return "";
+  const raw = value.trim();
+
+  // If a full share URL is pasted, extract sessionId query param.
+  if (raw.startsWith("http://") || raw.startsWith("https://")) {
+    try {
+      const parsedUrl = new URL(raw);
+      const sid = parsedUrl.searchParams.get("sessionId");
+      if (sid) return sid;
+    } catch {
+      // Ignore parse failure and continue with fallback extraction below.
+    }
+  }
+
+  // Fallback: pull out notary-session-* from arbitrary text.
+  const match = raw.match(/notary-session-[A-Za-z0-9_-]+/);
+  return match ? match[0] : raw;
+};
+
 const NotaryPage = ({ sessionId: passedSessionId }) => {
   const [elements, setElements] = useState([]);
   const [sessionId, setSessionId] = useState(passedSessionId || null);
@@ -15,12 +35,14 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   const [documentInfo, setDocumentInfo] = useState(null);
   const [isConnected, setIsConnected] = useState(socket.connected);
   const [pdfDataUrl, setPdfDataUrl] = useState(null);
+  const [ownerConnected, setOwnerConnected] = useState(false);
+  const [sessionStatus, setSessionStatus] = useState(null);
   const editorScrollRef = useRef(null);
 
   // Auto-fill from URL param even if not passed as prop (direct URL open)
-  const urlSessionId = new URLSearchParams(window.location.search).get("sessionId");
-  const storedSessionId = localStorage.getItem("notary.lastSessionId");
-  const initialSessionId = passedSessionId || urlSessionId || storedSessionId || "";
+  const urlSessionId = normalizeSessionId(new URLSearchParams(window.location.search).get("sessionId"));
+  const storedSessionId = normalizeSessionId(localStorage.getItem("notary.lastSessionId"));
+  const initialSessionId = normalizeSessionId(passedSessionId || urlSessionId || storedSessionId || "");
   const [inputSessionId, setInputSessionId] = useState(initialSessionId);
   const [sessionJoined, setSessionJoined] = useState(!!initialSessionId);
 
@@ -69,6 +91,15 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
 
       socket.on("usersConnected", (users) => {
         setConnectedUsers(users);
+        // Check if owner is in the connected users
+        const owner = users.find(u => u.role === 'owner');
+        setOwnerConnected(!!owner);
+      });
+
+      socket.on("sessionStatus", (status) => {
+        console.log("Session status:", status);
+        setSessionStatus(status);
+        setOwnerConnected(status.ownerConnected);
       });
 
       socket.on("documentUploaded", (docInfo) => {
@@ -87,21 +118,23 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         socket.off("usersConnected");
         socket.off("documentUploaded");
         socket.off("documentShared");
+        socket.off("sessionStatus");
       };
     }
   }, [sessionJoined, sessionId]);
 
   const handleJoinSession = () => {
-    const trimmed = inputSessionId.trim();
-    if (trimmed) {
-      setSessionId(trimmed);
+    const normalized = normalizeSessionId(inputSessionId);
+    if (normalized) {
+      setSessionId(normalized);
+      setInputSessionId(normalized);
       setSessionJoined(true);
       localStorage.setItem("notary.role", "notary");
-      localStorage.setItem("notary.lastSessionId", trimmed);
+      localStorage.setItem("notary.lastSessionId", normalized);
 
       const params = new URLSearchParams(window.location.search);
       params.set("role", "notary");
-      params.set("sessionId", trimmed);
+      params.set("sessionId", normalized);
       window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
     }
   };
@@ -239,6 +272,18 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
           </p>
           <p style={{ margin: "4px 0" }}>
             <strong>Connected Users:</strong> {connectedUsers.length}
+            {" | "}
+            <strong>Owner Status:</strong>
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: "4px",
+              marginLeft: "6px",
+              padding: "2px 8px", borderRadius: "12px", fontSize: "12px", fontWeight: "bold",
+              backgroundColor: ownerConnected ? "#e8f5e9" : "#fff3e0",
+              color: ownerConnected ? "#2e7d32" : "#e65100",
+              border: `1px solid ${ownerConnected ? "#a5d6a7" : "#ffe0b2"}`
+            }}>
+              {ownerConnected ? "● Online" : "● Waiting..."}
+            </span>
           </p>
           {documentInfo && (
             <p style={{ margin: "4px 0" }}>

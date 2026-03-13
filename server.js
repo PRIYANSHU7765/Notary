@@ -45,6 +45,27 @@ app.use(express.json());
 const sessions = new Map();
 const userSessions = new Map();
 
+const normalizeRoomId = (value) => {
+  if (!value) return "";
+  const raw = String(value).trim();
+
+  // If a full URL is accidentally sent instead of room id, extract sessionId.
+  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    try {
+      const parsed = new URL(raw);
+      const sid = parsed.searchParams.get('sessionId');
+      if (sid) return sid;
+    } catch {
+      // Continue to fallback extraction.
+    }
+  }
+
+  const match = raw.match(/notary-session-[A-Za-z0-9_-]+/);
+  return match ? match[0] : raw;
+};
+
+const normalizeRole = (value) => String(value || '').trim().toLowerCase();
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
@@ -71,7 +92,15 @@ io.on('connection', (socket) => {
 
   // User joins a notarization session
   socket.on('joinSession', (data) => {
-    const { roomId, role, userId } = data;
+    const rawRoomId = data?.roomId;
+    const roomId = normalizeRoomId(rawRoomId);
+    const role = normalizeRole(data?.role);
+    const userId = data?.userId || socket.id;
+
+    if (!roomId || !role) {
+      console.warn(`⚠️ Invalid joinSession payload from ${socket.id}:`, data);
+      return;
+    }
     
     socket.join(roomId);
     userSessions.set(socket.id, { roomId, role, userId });
@@ -82,12 +111,25 @@ io.on('connection', (socket) => {
     }
 
     const session = sessions.get(roomId);
+    session.users = session.users.filter((u) => u.socketId !== socket.id);
     session.users.push({ socketId: socket.id, role, userId });
 
     console.log(`👤 ${role} joined session ${roomId}`);
 
     // Notify all users in the session
     io.to(roomId).emit('usersConnected', session.users);
+
+    // Send connection status confirmation specifically for the joining user
+    const hasOwner = session.users.some(u => u.role === 'owner');
+    const hasNotary = session.users.some(u => u.role === 'notary');
+    socket.emit('sessionStatus', {
+      sessionId: roomId,
+      currentUser: { role, userId },
+      ownerConnected: hasOwner,
+      notaryConnected: hasNotary,
+      totalUsers: session.users.length,
+      allUsers: session.users
+    });
 
     // If a document was already shared before this user joined, replay it immediately
     if (session.pdfDataUrl) {
@@ -104,20 +146,20 @@ io.on('connection', (socket) => {
     if (userSession) {
       io.to(userSession.roomId).emit('documentUploaded', data);
       console.log(`📄 Document uploaded: ${data.fileName}`);
+    }
+  });
 
-      // Handle full PDF data sharing — store in session and relay to others
-      socket.on('documentShared', (data) => {
-        const userSession = userSessions.get(socket.id);
-        if (userSession) {
-          const session = sessions.get(userSession.roomId);
-          if (session) {
-            session.pdfDataUrl = data.pdfDataUrl;
-            session.pdfFileName = data.fileName;
-          }
-          socket.to(userSession.roomId).emit('documentShared', data);
-          console.log(`📤 Document shared to room: ${data.fileName}`);
-        }
-      });
+  // Handle full PDF data sharing — store in session and relay to others
+  socket.on('documentShared', (data) => {
+    const userSession = userSessions.get(socket.id);
+    if (userSession) {
+      const session = sessions.get(userSession.roomId);
+      if (session) {
+        session.pdfDataUrl = data.pdfDataUrl;
+        session.pdfFileName = data.fileName;
+      }
+      socket.to(userSession.roomId).emit('documentShared', data);
+      console.log(`📤 Document shared to room: ${data.fileName}`);
     }
   });
 

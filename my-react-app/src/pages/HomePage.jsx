@@ -1,63 +1,47 @@
-import React, { useState, useEffect } from "react";
-import OwnerPage from "./OwnerPage";
-import NotaryPage from "./NotaryPage";
+import React, { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 
 const HomePage = () => {
-  const [selectedRole, setSelectedRole] = useState(null);
-  const [urlSessionId, setUrlSessionId] = useState(null);
+  const navigate = useNavigate();
 
-  // Auto-route when a share link is opened (e.g. ?role=notary&sessionId=notary-session-xxx)
+  // Check for valid share link params and auto-navigate if present
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const role = params.get("role");
     const sid = params.get("sessionId");
 
-    if (role === "notary" && sid) {
-      setUrlSessionId(sid);
-      setSelectedRole("notary");
-    } else if (role === "owner") {
-      setSelectedRole("owner");
-    } else {
-      // Fallback to local storage when URL params are absent.
-      const storedRole = localStorage.getItem("notary.role");
-      const storedSessionId = localStorage.getItem("notary.lastSessionId");
-      if (storedRole === "owner") {
-        setSelectedRole("owner");
-      } else if (storedRole === "notary") {
-        setSelectedRole("notary");
-        if (storedSessionId) {
-          setUrlSessionId(storedSessionId);
-        }
-      }
+    // Validate that sessionId is not malformed (doesn't contain http:// or encoded URLs)
+    const isValidSessionId = (id) => {
+      if (!id) return false;
+      return /^notary-session-[A-Za-z0-9_-]+$/.test(id) && !id.includes("%");
+    };
+
+    // If valid URL params exist, navigate to the appropriate page
+    if (role === "notary" && isValidSessionId(sid)) {
+      localStorage.setItem("notary.role", "notary");
+      localStorage.setItem("notary.lastSessionId", sid);
+      navigate(`/notary?sessionId=${sid}`);
+    } else if (role === "owner" && params.get("role")) {
+      localStorage.setItem("notary.role", "owner");
+      navigate("/owner");
     }
-  }, []);
+    // Otherwise, stay on role selection page
+  }, [navigate]);
 
   const handleSelectRole = (role) => {
     localStorage.setItem("notary.role", role);
 
-    const params = new URLSearchParams(window.location.search);
-    params.set("role", role);
-
-    const storedSessionId = localStorage.getItem("notary.lastSessionId");
-    if (role === "notary" && storedSessionId) {
-      params.set("sessionId", storedSessionId);
-      setUrlSessionId(storedSessionId);
-    } else if (role === "owner") {
-      // Owner session ID is generated/restored in OwnerPage; do not force one here.
-      params.delete("sessionId");
+    if (role === "owner") {
+      navigate("/owner");
+    } else if (role === "notary") {
+      const storedSessionId = localStorage.getItem("notary.lastSessionId");
+      if (storedSessionId) {
+        navigate(`/notary?sessionId=${storedSessionId}`);
+      } else {
+        navigate("/notary");
+      }
     }
-
-    window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
-    setSelectedRole(role);
   };
-
-  if (selectedRole === "owner") {
-    return <OwnerPage />;
-  }
-
-  if (selectedRole === "notary") {
-    return <NotaryPage sessionId={urlSessionId} />;
-  }
 
   return (
     <div

@@ -13,6 +13,7 @@ const OwnerPage = () => {
   const editorScrollRef = useRef(null);
   const [isConnected, setIsConnected] = useState(socket.connected);
   const [uploadedFile, setUploadedFile] = useState(null);
+  const [uploadedFileName, setUploadedFileName] = useState("");
   const [uploadError, setUploadError] = useState("");
   const [downloadError, setDownloadError] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
@@ -20,6 +21,8 @@ const OwnerPage = () => {
   const [elements, setElements] = useState([]);
   const [sessionId, setSessionId] = useState(null);
   const [connectedUsers, setConnectedUsers] = useState([]);
+  const [notaryConnected, setNotaryConnected] = useState(false);
+  const [sessionStatus, setSessionStatus] = useState(null);
 
   // Track backend connection status
   useEffect(() => {
@@ -73,6 +76,20 @@ const OwnerPage = () => {
 
     socket.on("usersConnected", (users) => {
       setConnectedUsers(users);
+      // Check if notary is in the connected users
+      const notary = users.find(u => u.role === 'notary');
+      setNotaryConnected(!!notary);
+    });
+
+    socket.on("sessionStatus", (status) => {
+      console.log("Session status:", status);
+      setSessionStatus(status);
+      setNotaryConnected(status.notaryConnected);
+    });
+
+    socket.on("documentShared", (data) => {
+      setUploadedFile(data.pdfDataUrl);
+      setUploadedFileName(data.fileName || "document.pdf");
     });
 
     return () => {
@@ -80,6 +97,8 @@ const OwnerPage = () => {
       socket.off("elementUpdated");
       socket.off("elementRemoved");
       socket.off("usersConnected");
+      socket.off("documentShared");
+      socket.off("sessionStatus");
     };
   }, []);
 
@@ -107,13 +126,17 @@ const OwnerPage = () => {
     setDownloadError("");
     setElements([]);
     setUploadedFile(file);
+    setUploadedFileName(file.name);
     // Emit metadata
     socket.emit("documentUploaded", { fileName: file.name, fileSize: file.size });
 
     // Emit full PDF data URL so the notary can view the document in their browser
     const reader = new FileReader();
     reader.onload = () => {
-      socket.emit("documentShared", { pdfDataUrl: reader.result, fileName: file.name });
+      const payload = { pdfDataUrl: reader.result, fileName: file.name };
+      setUploadedFile(reader.result);
+      setUploadedFileName(file.name);
+      socket.emit("documentShared", payload);
     };
     reader.readAsDataURL(file);
   };
@@ -153,7 +176,10 @@ const OwnerPage = () => {
       setIsDownloading(true);
       setDownloadError("");
 
-      const inputBytes = await uploadedFile.arrayBuffer();
+      const inputBytes =
+        typeof uploadedFile === "string"
+          ? await fetch(uploadedFile).then((response) => response.arrayBuffer())
+          : await uploadedFile.arrayBuffer();
       const pdfDoc = await PDFDocument.load(inputBytes);
       const [firstPage] = pdfDoc.getPages();
 
@@ -186,9 +212,12 @@ const OwnerPage = () => {
       const outputBlob = new Blob([outputBytes], { type: "application/pdf" });
       const outputUrl = URL.createObjectURL(outputBlob);
 
-      const sourceName = uploadedFile.name.toLowerCase().endsWith(".pdf")
-        ? uploadedFile.name.slice(0, -4)
-        : uploadedFile.name;
+      const resolvedName =
+        uploadedFileName ||
+        (typeof uploadedFile !== "string" ? uploadedFile.name : "document.pdf");
+      const sourceName = resolvedName.toLowerCase().endsWith(".pdf")
+        ? resolvedName.slice(0, -4)
+        : resolvedName;
 
       const link = document.createElement("a");
       link.href = outputUrl;
@@ -251,10 +280,22 @@ const OwnerPage = () => {
             <strong>Session ID:</strong>{" "}
             <code style={{ fontSize: "13px", backgroundColor: "#fff", padding: "2px 6px", borderRadius: "3px" }}>{sessionId}</code>
           </p>
+          <p style={{ margin: "4px 0" }}>
+            <strong>Connected Notaries:</strong> {connectedUsers.filter((u) => String(u.role || "").toLowerCase().trim() === "notary").length}
+            {" | "}
+            <strong>Notary Status:</strong>
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: "4px",
+              marginLeft: "6px",
+              padding: "2px 8px", borderRadius: "12px", fontSize: "12px", fontWeight: "bold",
+              backgroundColor: notaryConnected ? "#e8f5e9" : "#fff3e0",
+              color: notaryConnected ? "#2e7d32" : "#e65100",
+              border: `1px solid ${notaryConnected ? "#a5d6a7" : "#ffe0b2"}`
+            }}>
+              {notaryConnected ? "● Online" : "● Waiting..."}
+            </span>
+          </p>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginTop: "6px" }}>
-            <p style={{ margin: 0 }}>
-              <strong>Connected Notaries:</strong> {connectedUsers.filter((u) => u.role === "notary").length}
-            </p>
             <button
               onClick={handleCopyNotaryLink}
               title="Copy a link that automatically opens the Notary page in this session"
@@ -287,7 +328,7 @@ const OwnerPage = () => {
             onChange={handleFileUpload}
             style={{ marginLeft: "10px", cursor: "pointer" }}
           />
-          {uploadedFile && <p style={{ margin: "5px 0 0 0", color: "green" }}>✅ {uploadedFile.name}</p>}
+          {uploadedFile && <p style={{ margin: "5px 0 0 0", color: "green" }}>✅ {uploadedFileName || "document.pdf"}</p>}
           {uploadError && <p style={{ margin: "5px 0 0 0", color: "#d32f2f" }}>{uploadError}</p>}
 
           {uploadedFile && (
