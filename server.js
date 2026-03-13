@@ -2,13 +2,10 @@
  * NOTARIZATION PLATFORM - Backend Server
  * Socket.io Server for Real-time Synchronization
  * 
- * To run this server:
- * 1. Make sure Node.js is installed
- * 2. Create a new folder for backend (e.g., notary-server)
- * 3. Copy this file into that folder
- * 4. Run: npm install express socket.io cors
- * 5. Run: node server.js
- * 6. Your server will run on http://localhost:5000
+ * Environment Variables:
+ * - PORT: Server port (default: 5000)
+ * - NODE_ENV: development or production
+ * - FRONTEND_URL: Frontend domain for CORS
  */
 
 const express = require('express');
@@ -19,23 +16,52 @@ const cors = require('cors');
 const app = express();
 const server = http.createServer(app);
 
+// Environment variables
+const PORT = process.env.PORT || 5000;
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+// CORS configuration for production
+const corsOptions = {
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    FRONTEND_URL,
+    'https://notary-platform.vercel.app', // Update with your Vercel domain
+  ],
+  methods: ['GET', 'POST'],
+  credentials: true,
+};
+
 const io = socketIO(server, {
-  cors: {
-    origin: ['http://localhost:3000', 'http://localhost:5173'],
-    methods: ['GET', 'POST'],
-  },
+  cors: corsOptions,
 });
 
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Store active sessions and users
 const sessions = new Map();
 const userSessions = new Map();
 
-// Serve a simple health check endpoint
+// Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'Server is running', sessions: sessions.size });
+  res.json({ 
+    status: 'Server is running', 
+    sessions: sessions.size,
+    environment: NODE_ENV,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Get all active sessions (for monitoring)
+app.get('/api/sessions', (req, res) => {
+  const sessionData = Array.from(sessions.entries()).map(([id, session]) => ({
+    id,
+    users: session.users.length,
+    created: session.created
+  }));
+  res.json(sessionData);
 });
 
 // Socket.io Events
@@ -119,13 +145,13 @@ io.on('connection', (socket) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`
 ╔════════════════════════════════════════════════════╗
 ║  🔏 Notarization Platform - Server                 ║
 ║  Server running on: http://localhost:${PORT}        ║
-║  Environment: ${process.env.NODE_ENV || 'development'}              ║
+║  Environment: ${NODE_ENV}                           ║
+║  Frontend: ${FRONTEND_URL}                      ║
 ╚════════════════════════════════════════════════════╝
   `);
 });
