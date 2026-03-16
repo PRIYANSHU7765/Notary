@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import SignaturePad from "./SignaturePad";
+import { fetchSignatures, saveSignature } from "../utils/apiClient";
 
 const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true }) => {
   const [showSignaturePad, setShowSignaturePad] = useState(false);
@@ -40,16 +41,7 @@ const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true }) => {
   useEffect(() => {
     const loadSignatures = async () => {
       try {
-        const url = 'http://localhost:5002/api/signatures/' + userRole;
-        console.log('[SidebarAssets] Fetching signatures from:', url);
-        const response = await fetch(url);
-        
-        if (!response.ok) {
-          console.warn('[SidebarAssets] Failed to fetch signatures:', response.status);
-          return;
-        }
-
-        const savedSignatures = await response.json();
+        const savedSignatures = await fetchSignatures(userRole);
         console.log('[SidebarAssets] ✅ Loaded', savedSignatures.length, 'signatures');
         
         // Add saved signatures to assets with the proper structure
@@ -70,6 +62,12 @@ const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true }) => {
   }, [userRole]);
 
   const handleDragStart = (e, asset) => {
+    // Prevent dragging when clicking the delete button
+    if (e.target.hasAttribute('data-delete-btn') || e.target.closest('[data-delete-btn]')) {
+      e.preventDefault();
+      return;
+    }
+    
     e.dataTransfer.effectAllowed = "copy";
     e.dataTransfer.setData(
       "application/json",
@@ -101,34 +99,28 @@ const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true }) => {
     // Save to backend asynchronously
     try {
       console.log("💾 Saving signature to MongoDB...");
-      const url = 'http://localhost:5002/api/signatures';
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          id: newAsset.id,
-          name: newAsset.name,
-          image: signatureImage,
-          userRole: userRole,
-        }),
+      const result = await saveSignature({
+        id: newAsset.id,
+        name: newAsset.name,
+        image: signatureImage,
+        userRole: userRole,
       });
-      
-      console.log("Response status:", response.status);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: Failed to save signature`);
-      }
-      
-      const result = await response.json();
       console.log("✅ Signature saved to backend successfully:", result.id);
     } catch (error) {
       console.error("❌ Error saving signature to backend:", error);
-      alert("Error saving signature to database. It is saved locally but may not persist on reload.");
+      console.warn("Signature is saved locally but backend persistence failed.");
     }
     
     setShowSignaturePad(false);
+  };
+
+  const handleDeleteAsset = (assetId) => {
+    console.log("🗑️ Deleting asset:", assetId);
+    setAssets(prev => {
+      const updated = prev.filter(asset => asset.id !== assetId);
+      console.log("📦 Assets after delete:", updated.length);
+      return updated;
+    });
   };
 
   // Filter assets based on user role
@@ -245,10 +237,65 @@ const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true }) => {
                 userSelect: "none",
                 transition: "all 0.2s",
                 fontSize: "12px",
+                position: "relative",
               }}
-              onMouseEnter={(e) => (e.target.style.backgroundColor = "#e8f4f8")}
-              onMouseLeave={(e) => (e.target.style.backgroundColor = "white")}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "#e8f4f8";
+                const deleteBtn = e.currentTarget.querySelector('[data-delete-btn]');
+                if (deleteBtn) deleteBtn.style.display = "block";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "white";
+                const deleteBtn = e.currentTarget.querySelector('[data-delete-btn]');
+                if (deleteBtn) deleteBtn.style.display = "none";
+              }}
             >
+              <button
+                data-delete-btn
+                draggable={false}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onDragStart={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  console.log("🖱️ Delete button clicked for:", asset.id);
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleDeleteAsset(asset.id);
+                }}
+                style={{
+                  position: "absolute",
+                  top: "5px",
+                  right: "5px",
+                  background: "#dc2626",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "4px",
+                  width: "28px",
+                  height: "28px",
+                  cursor: "pointer",
+                  display: "none",
+                  fontWeight: "bold",
+                  fontSize: "14px",
+                  padding: "0",
+                  lineHeight: "1",
+                  transition: "background 0.2s",
+                  zIndex: 10,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#b91c1c";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#dc2626";
+                }}
+                title="Delete this asset"
+              >
+                🗑️
+              </button>
               <strong>{asset.name}</strong>
               <br />
               <small style={{ color: "#666" }}>Type: {asset.type}</small>

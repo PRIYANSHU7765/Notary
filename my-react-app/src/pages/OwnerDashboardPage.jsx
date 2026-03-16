@@ -2,6 +2,10 @@ import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { saveDocument } from "../utils/apiClient";
 import socket from "../socket/socket";
+import PdfViewer from "../components/PdfViewer";
+import SidebarAssets from "../components/SidebarAssets";
+import CanvasBoard from "../components/CanvasBoard";
+import ScreenRecorder from "../components/ScreenRecorder";
 
 const STORAGE_KEY = "notary.ownerDocs";
 
@@ -213,6 +217,15 @@ const OwnerDashboardPage = () => {
   const [notarizingDoc, setNotarizingDoc] = useState(null);
   const [sessionId, setSessionId] = useState("");
   const [activeSessions, setActiveSessions] = useState({});
+  const [activeSessionDocId, setActiveSessionDocId] = useState(null);
+  const [notaries, setNotaries] = useState([]);
+  const [sessionDocName, setSessionDocName] = useState("");
+  const [isConnected, setIsConnected] = useState(socket.connected);
+  const [sessionJoined, setSessionJoined] = useState(false);
+  const [editorElements, setEditorElements] = useState([]);
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [uploadedFileName, setUploadedFileName] = useState("");
+  const editorScrollRef = useRef(null);
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
 
@@ -241,12 +254,111 @@ const OwnerDashboardPage = () => {
     };
   }, []);
 
+  // Track socket connection
+  useEffect(() => {
+    const onConnect = () => setIsConnected(true);
+    const onDisconnect = () => setIsConnected(false);
+    socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
+    return () => {
+      socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+    };
+  }, []);
+
+  // Join session when activeSessionDocId is set
+  useEffect(() => {
+    if (!activeSessionDocId || sessionJoined) return;
+
+    const sessionIdToJoin = activeSessions[activeSessionDocId];
+    if (!sessionIdToJoin) return;
+
+    const authUser = (() => {
+      try {
+        return JSON.parse(localStorage.getItem('notary.authUser') || 'null');
+      } catch {
+        return null;
+      }
+    })();
+
+    socket.emit("joinSession", {
+      roomId: sessionIdToJoin,
+      role: "owner",
+      userId: socket.id,
+      username: authUser?.username || "Owner",
+    });
+
+    const onUsersConnected = (users) => {
+      const notaryUsers = users.filter((u) => u.role === "notary");
+      setNotaries(notaryUsers);
+    };
+
+    const onDocumentShared = (data) => {
+      setSessionDocName(data.fileName || "");
+    };
+
+    socket.on("usersConnected", onUsersConnected);
+    socket.on("documentShared", onDocumentShared);
+
+    return () => {
+      socket.off("usersConnected", onUsersConnected);
+      socket.off("documentShared", onDocumentShared);
+    };
+  }, [activeSessionDocId, activeSessions, sessionJoined]);
+
   const handleJoinSession = (doc) => {
-    const sessionId = activeSessions[doc.id];
-    if (sessionId) {
-      localStorage.setItem("notary.ownerSessionId", sessionId);
-      navigate(`/owner/session`);
+    const sessionIdVal = activeSessions[doc.id];
+    if (sessionIdVal) {
+      setActiveSessionDocId(doc.id);
     }
+  };
+
+  const EDITOR_WIDTH = 900;
+  const EDITOR_HEIGHT = 1300;
+
+  const handleJoinEditor = () => {
+    // Pre-load the document associated with this session
+    const doc = docs.find((d) => d.id === activeSessionDocId);
+    if (doc?.dataUrl) {
+      setUploadedFile(doc.dataUrl);
+      setUploadedFileName(doc.name || "document.pdf");
+      // Share document with notary via socket
+      const sessionIdVal = activeSessions[activeSessionDocId];
+      if (sessionIdVal) {
+        socket.emit("documentShared", { pdfDataUrl: doc.dataUrl, fileName: doc.name || "document.pdf" });
+      }
+    }
+    setEditorElements([]);
+    setSessionJoined(true);
+  };
+
+  const handleEditorElementAdd = (element) => {
+    setEditorElements((prev) => [...prev, element]);
+    const sessionIdVal = activeSessions[activeSessionDocId];
+    if (sessionIdVal) socket.emit("elementAdded", element);
+  };
+
+  const handleEditorElementUpdate = (elementId, updates) => {
+    const updatedElement = {
+      ...editorElements.find((el) => el.id === elementId),
+      ...updates,
+    };
+    setEditorElements((prev) => prev.map((el) => (el.id === elementId ? updatedElement : el)));
+    const sessionIdVal = activeSessions[activeSessionDocId];
+    if (sessionIdVal) socket.emit("elementUpdated", updatedElement);
+  };
+
+  const handleEditorElementRemove = (elementId) => {
+    setEditorElements((prev) => prev.filter((el) => el.id !== elementId));
+    const sessionIdVal = activeSessions[activeSessionDocId];
+    if (sessionIdVal) socket.emit("elementRemoved", elementId);
+  };
+
+  const handleExitSession = () => {
+    setActiveSessionDocId(null);
+    setNotaries([]);
+    setSessionDocName("");
+    setSessionJoined(false);
   };
 
   const copySessionId = () => {
@@ -381,107 +493,434 @@ const OwnerDashboardPage = () => {
 
   return (
     <div style={{ minHeight: "100vh", background: "#f7f8fc", fontFamily: "'Inter', 'Segoe UI', sans-serif" }}>
-      {/* Top Bar */}
-      <div
-        style={{
-          background: "#fff",
-          borderBottom: "1px solid #e8eaed",
-          padding: "16px 32px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <div>
-          <h1 style={{ margin: 0, fontSize: "22px", fontWeight: 700, color: "#1a1a2e" }}>
-            My Documents
-          </h1>
-          <p style={{ margin: "6px 0 0 0", fontSize: "13px", color: "#888" }}>
-            Manage and track all your notarization documents
-          </p>
-          {sessionId && (
-            <div style={{ marginTop: "10px", display: "flex", alignItems: "center", gap: "10px" }}>
-              <span style={{ fontSize: "12px", color: "#555" }}>
-                Session ID:
-                <span style={{ fontWeight: 700, marginLeft: "6px" }}>{sessionId}</span>
-              </span>
-              <button
-                onClick={copySessionId}
+      {/* If session joined, show editor view */}
+      {activeSessionDocId && sessionJoined ? (
+        <div style={{ display: "flex", height: "100vh" }}>
+          {/* Sidebar */}
+          <SidebarAssets userRole="owner" />
+
+          {/* Main Content */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "15px", overflowY: "auto" }}>
+            {/* Header */}
+            <div style={{ marginBottom: "15px", backgroundColor: "#f3e5f5", padding: "15px", borderRadius: "5px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+                <div>
+                  <button
+                    onClick={handleExitSession}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: "20px",
+                      color: "#4f6ef7",
+                      padding: "0 4px",
+                      lineHeight: 1,
+                      marginRight: "10px",
+                    }}
+                    title="Back to Notaries"
+                  >
+                    ←
+                  </button>
+                  <h2 style={{ margin: 0, display: "inline" }}>✍️ Owner Dashboard</h2>
+                </div>
+                {activeSessions[activeSessionDocId] && (
+                  <div style={{ fontSize: "13px", color: "#555" }}>
+                    Session ID: <span style={{ fontWeight: 600 }}>{activeSessions[activeSessionDocId]}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Screen Recording Section */}
+            <ScreenRecorder />
+
+            {/* Document Editor */}
+            <div style={{ marginBottom: "15px", padding: "15px", backgroundColor: "#f5f5f5", borderRadius: "5px" }}>
+              <label htmlFor="session-file-upload" style={{ fontWeight: "bold" }}>
+                📁 Upload Document:
+              </label>
+              <input
+                id="session-file-upload"
+                type="file"
+                accept=".pdf,application/pdf"
+                style={{ marginLeft: "10px", cursor: "pointer" }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    setUploadedFile(reader.result);
+                    setUploadedFileName(file.name);
+                    const sessionIdVal = activeSessions[activeSessionDocId];
+                    if (sessionIdVal) {
+                      socket.emit("documentShared", { pdfDataUrl: reader.result, fileName: file.name });
+                    }
+                  };
+                  reader.readAsDataURL(file);
+                }}
+              />
+              {uploadedFile && <p style={{ margin: "5px 0 0 0", color: "green" }}>✅ {uploadedFileName}</p>}
+            </div>
+
+            <div
+              ref={editorScrollRef}
+              style={{ position: "relative", width: EDITOR_WIDTH, border: "1px solid #ccc", backgroundColor: "#fff", flexShrink: 0 }}
+            >
+              <h3 style={{ margin: "10px 15px" }}>Document Editor</h3>
+              {uploadedFile ? (
+                <div style={{ position: "relative" }}>
+                  <PdfViewer
+                    file={uploadedFile}
+                    width={EDITOR_WIDTH}
+                    height={EDITOR_HEIGHT}
+                  />
+                  <CanvasBoard
+                    elements={editorElements}
+                    onElementAdd={handleEditorElementAdd}
+                    onElementUpdate={handleEditorElementUpdate}
+                    onElementRemove={handleEditorElementRemove}
+                    width={EDITOR_WIDTH}
+                    height={EDITOR_HEIGHT}
+                    userRole="owner"
+                    scrollContainerRef={editorScrollRef}
+                  />
+                </div>
+              ) : (
+                <div style={{ height: "300px", display: "flex", alignItems: "center", justifyContent: "center", color: "#999" }}>
+                  Upload a document to start placing signatures and stamps
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : activeSessionDocId ? (
+        // Session Listing View
+        <div style={{ background: "#f7f8fc", minHeight: "100vh" }}>
+          {/* Top Bar - Session View */}
+          <div
+            style={{
+              background: "#fff",
+              borderBottom: "1px solid #e8eaed",
+              padding: "16px 32px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <button
+                  onClick={handleExitSession}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: "20px",
+                    color: "#4f6ef7",
+                    padding: "0 4px",
+                    lineHeight: 1,
+                  }}
+                  title="Back to Documents"
+                >
+                  ←
+                </button>
+                <h1 style={{ margin: 0, fontSize: "22px", fontWeight: 700, color: "#1a1a2e" }}>
+                  Owner Dashboard
+                </h1>
+              </div>
+              {activeSessions[activeSessionDocId] && (
+                <p style={{ margin: "4px 0 0 36px", fontSize: "13px", color: "#888" }}>
+                  Session ID: <span style={{ fontWeight: 600, color: "#555" }}>{activeSessions[activeSessionDocId]}</span>
+                </p>
+              )}
+            </div>
+            {isConnected && (
+              <div
                 style={{
-                  padding: "4px 10px",
-                  borderRadius: "8px",
-                  border: "1px solid #d1d5db",
-                  background: "#fff",
-                  cursor: "pointer",
-                  fontSize: "12px",
-                  color: "#374151",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  fontSize: "13px",
+                  color: "#16a34a",
+                  fontWeight: 600,
                 }}
               >
-                Copy
+                <span
+                  style={{
+                    width: "8px",
+                    height: "8px",
+                    borderRadius: "50%",
+                    background: "#16a34a",
+                    display: "inline-block",
+                  }}
+                />
+                Server online
+              </div>
+            )}
+          </div>
+
+          {/* Session Content */}
+          <div style={{ maxWidth: "820px", margin: "0 auto", padding: "32px 24px" }}>
+            {notaries.length === 0 ? (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "80px 20px",
+                  color: "#aaa",
+                }}
+              >
+                <div style={{ fontSize: "56px", marginBottom: "16px" }}>🔕</div>
+                <p style={{ fontSize: "17px", fontWeight: 500, margin: "0 0 8px 0", color: "#888" }}>
+                  Waiting for notary to connect...
+                </p>
+                <p style={{ fontSize: "14px", margin: 0 }}>
+                  The notary user will appear here once they join the session.
+                </p>
+              </div>
+            ) : (
+              <div
+                style={{
+                  background: "#fff",
+                  borderRadius: "12px",
+                  border: "1px solid #e8eaed",
+                  boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr 140px 120px",
+                    padding: "12px 24px",
+                    background: "#f9fafc",
+                    borderBottom: "1px solid #e8eaed",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    color: "#888",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                  }}
+                >
+                  <span>Notary User</span>
+                  <span>Document</span>
+                  <span>Status</span>
+                  <span>Action</span>
+                </div>
+
+                {notaries.map((notary, idx) => (
+                  <div
+                    key={notary.socketId}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr 140px 120px",
+                      padding: "16px 24px",
+                      alignItems: "center",
+                      borderBottom: idx < notaries.length - 1 ? "1px solid #f0f0f0" : "none",
+                      transition: "background 0.1s",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "#fafafa")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <div
+                        style={{
+                          width: "36px",
+                          height: "36px",
+                          borderRadius: "50%",
+                          background: "#eef1fe",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: "16px",
+                          fontWeight: 700,
+                          color: "#4f6ef7",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {(notary.username || "N")[0].toUpperCase()}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: "14px", color: "#1a1a2e" }}>
+                          {notary.username || notary.userId}
+                        </div>
+                        <div style={{ fontSize: "11px", color: "#aaa", marginTop: "2px" }}>Notary</div>
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: "13px", color: "#555" }}>
+                      {sessionDocName ? (
+                        <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span>📄</span>
+                          <span
+                            style={{
+                              maxWidth: "180px",
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              display: "inline-block",
+                            }}
+                          >
+                            {sessionDocName}
+                          </span>
+                        </span>
+                      ) : (
+                        <span style={{ color: "#bbb", fontStyle: "italic" }}>No document shared yet</span>
+                      )}
+                    </div>
+
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        background: "#d1fae5",
+                        color: "#065f46",
+                        padding: "4px 12px",
+                        borderRadius: "12px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: "7px",
+                          height: "7px",
+                          borderRadius: "50%",
+                          background: "#10b981",
+                          display: "inline-block",
+                        }}
+                      />
+                      Connected
+                    </span>
+
+                    <button
+                      onClick={handleJoinEditor}
+                      style={{
+                        background: "#4f6ef7",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: "8px",
+                        padding: "8px 16px",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        transition: "background 0.15s",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "#3a58e0")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "#4f6ef7")}
+                    >
+                      Join
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        // Documents List View
+        <div>
+          {/* Top Bar */}
+          <div
+            style={{
+              background: "#fff",
+              borderBottom: "1px solid #e8eaed",
+              padding: "16px 32px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <div>
+              <h1 style={{ margin: 0, fontSize: "22px", fontWeight: 700, color: "#1a1a2e" }}>
+                My Documents
+              </h1>
+              <p style={{ margin: "6px 0 0 0", fontSize: "13px", color: "#888" }}>
+                Manage and track all your notarization documents
+              </p>
+              {sessionId && (
+                <div style={{ marginTop: "10px", display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span style={{ fontSize: "12px", color: "#555" }}>
+                    Session ID:
+                    <span style={{ fontWeight: 700, marginLeft: "6px" }}>{sessionId}</span>
+                  </span>
+                  <button
+                    onClick={copySessionId}
+                    style={{
+                      padding: "4px 10px",
+                      borderRadius: "8px",
+                      border: "1px solid #d1d5db",
+                      background: "#fff",
+                      cursor: "pointer",
+                      fontSize: "12px",
+                      color: "#374151",
+                    }}
+                  >
+                    Copy
+                  </button>
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: "12px" }}>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "10px 22px",
+                  background: "#4f6ef7",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "10px",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  boxShadow: "0 2px 8px rgba(79,110,247,0.3)",
+                  transition: "background 0.15s, transform 0.1s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "#3a58e0")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "#4f6ef7")}
+              >
+                <span style={{ fontSize: "18px" }}>+</span>
+                Upload File
+              </button>
+
+              <button
+                onClick={() => navigate("/owner/session")}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "10px 22px",
+                  background: "#10b981",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "10px",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  boxShadow: "0 2px 8px rgba(16,185,129,0.3)",
+                  transition: "background 0.15s, transform 0.1s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "#059669")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "#10b981")}
+              >
+                Sessions
               </button>
             </div>
-          )}
-        </div>
-        <div style={{ display: "flex", gap: "12px" }}>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "10px 22px",
-              background: "#4f6ef7",
-              color: "#fff",
-              border: "none",
-              borderRadius: "10px",
-              cursor: "pointer",
-              fontSize: "14px",
-              fontWeight: 600,
-              boxShadow: "0 2px 8px rgba(79,110,247,0.3)",
-              transition: "background 0.15s, transform 0.1s",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "#3a58e0")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "#4f6ef7")}
-          >
-            <span style={{ fontSize: "18px" }}>+</span>
-            Upload File
-          </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+              style={{ display: "none" }}
+              onChange={handleFileChange}
+            />
+          </div>
 
-          <button
-            onClick={() => navigate("/owner/session")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "10px 22px",
-              background: "#10b981",
-              color: "#fff",
-              border: "none",
-              borderRadius: "10px",
-              cursor: "pointer",
-              fontSize: "14px",
-              fontWeight: 600,
-              boxShadow: "0 2px 8px rgba(16,185,129,0.3)",
-              transition: "background 0.15s, transform 0.1s",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "#059669")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "#10b981")}
-          >
-            Sessions
-          </button>
-        </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
-          style={{ display: "none" }}
-          onChange={handleFileChange}
-        />
-      </div>
-
-      {/* Content */}
-      <div style={{ maxWidth: "900px", margin: "0 auto", padding: "32px 24px" }}>
-        {docs.length === 0 ? (
+          {/* Content */}
+          <div style={{ maxWidth: "900px", margin: "0 auto", padding: "32px 24px" }}>
+            {docs.length === 0 ? (
           <div
             style={{
               textAlign: "center",
@@ -661,6 +1100,8 @@ const OwnerDashboardPage = () => {
           </div>
         )}
       </div>
+        </div>
+      )}
 
       {/* Notarize Confirmation Modal */}
       {notarizingDoc && (
