@@ -4,6 +4,7 @@ import OwnerPage from './pages/OwnerPage'
 import OwnerDashboardPage from './pages/OwnerDashboardPage'
 import OwnerSessionPage from './pages/OwnerSessionPage'
 import NotaryPage from './pages/NotaryPage'
+import NotaryDocDashboardPage from './pages/NotaryDocDashboardPage'
 import AdminPage from './pages/AdminPage'
 import AuthPage from './pages/AuthPage'
 import RegisterPage from './pages/RegisterPage'
@@ -21,7 +22,7 @@ const getAuthUser = () => {
 
 const getDefaultRouteByRole = (role) => {
   if (role === 'owner') return '/owner/doc/dashboard'
-  if (role === 'notary') return '/notary'
+  if (role === 'notary') return '/notary/doc/dashboard'
   if (role === 'admin') return '/admin'
   return null
 }
@@ -119,6 +120,16 @@ function App() {
             <RequireAuth>
               <RequireRole allowedRoles={['owner']}>
                 <OwnerPage />
+              </RequireRole>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/notary/doc/dashboard"
+          element={
+            <RequireAuth>
+              <RequireRole allowedRoles={['notary']}>
+                <NotaryDocDashboardPage />
               </RequireRole>
             </RequireAuth>
           }

@@ -8,7 +8,7 @@ const AUTH_SESSION_TTL_MS = 8 * 60 * 60 * 1000
 
 const getDefaultRouteByRole = (role) => {
   if (role === 'owner') return '/owner'
-  if (role === 'notary') return '/notary'
+  if (role === 'notary') return '/notary/doc/dashboard'
   if (role === 'admin') return '/admin'
   return '/'
 }

@@ -143,4 +143,78 @@ async function deleteSignature(signatureId) {
   }
 }
 
-export { saveSignature, fetchSignatures, deleteSignature, registerUser, loginUser, API_BASE_URL };
+async function saveDocument(documentData) {
+  try {
+    const url = '/api/documents';
+    console.log('[saveDocument] Sending document:', { id: documentData.id, name: documentData.name });
+
+    const response = await fetchWithFallback(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(documentData),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    console.log('[saveDocument] ✅ Saved:', responseData.id);
+    return responseData;
+  } catch (error) {
+    console.error('[saveDocument] ❌ Error:', error);
+    throw error;
+  }
+}
+
+async function fetchNotarizedDocuments() {
+  try {
+    const url = '/api/documents/notarized';
+    console.log('[fetchNotarizedDocuments] Fetching from:', url);
+
+    const response = await fetchWithFallback(url);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: Failed to fetch documents`);
+    }
+
+    const responseData = await response.json();
+    console.log('[fetchNotarizedDocuments] ✅ Got', responseData.length, 'documents');
+    return responseData;
+  } catch (error) {
+    console.error('[fetchNotarizedDocuments] ❌ Error:', error);
+    return [];
+  }
+}
+
+async function updateDocumentReview(documentId, notaryReview, notaryName) {
+  try {
+    const url = `/api/documents/${documentId}/review`;
+    console.log('[updateDocumentReview] Updating:', documentId, 'as', notaryReview);
+
+    const response = await fetchWithFallback(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ notaryReview, notaryName }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    console.log('[updateDocumentReview] ✅ Updated');
+    return responseData;
+  } catch (error) {
+    console.error('[updateDocumentReview] ❌ Error:', error);
+    throw error;
+  }
+}
+
+export { saveSignature, fetchSignatures, deleteSignature, registerUser, loginUser, saveDocument, fetchNotarizedDocuments, updateDocumentReview, API_BASE_URL };

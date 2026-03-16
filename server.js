@@ -70,6 +70,23 @@ const signatureSchema = new mongoose.Schema({
 
 const Signature = mongoose.model('Signature', signatureSchema);
 
+// Document Schema for notarized documents
+const documentSchema = new mongoose.Schema({
+  id: { type: String, unique: true, required: true },
+  name: { type: String, required: true },
+  ownerName: { type: String, required: true },
+  size: Number,
+  type: String,
+  uploadedAt: { type: Date, default: Date.now },
+  notarized: { type: Boolean, default: false },
+  notarizedAt: Date,
+  notaryReview: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
+  notaryReviewedAt: Date,
+  notaryName: String,
+});
+
+const Document = mongoose.model('Document', documentSchema);
+
 // Store active sessions and users
 const sessions = new Map();
 const userSessions = new Map();
@@ -331,6 +348,121 @@ app.delete('/api/signatures/:id', async (req, res) => {
   } catch (error) {
     console.error('Error deleting signature:', error);
     res.status(500).json({ error: 'Failed to delete signature' });
+  }
+});
+
+// Document API Endpoints
+
+// Save a new notarized document
+app.post('/api/documents', async (req, res) => {
+  try {
+    const { id, name, ownerName, size, type, uploadedAt, notarized } = req.body;
+    const safeOwnerName = String(ownerName || '').trim() || 'Owner';
+
+    if (!id || !name) {
+      return res.status(400).json({ error: 'Missing required fields: id, name' });
+    }
+
+    const document = await Document.findOneAndUpdate(
+      { id },
+      {
+        $set: {
+          name,
+          ownerName: safeOwnerName,
+          size: size || 0,
+          type: type || 'application/octet-stream',
+          uploadedAt: uploadedAt ? new Date(uploadedAt) : new Date(),
+          notarized: Boolean(notarized),
+          notarizedAt: notarized ? new Date() : null,
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+      }
+    );
+
+    console.log(`📄 Document saved: ${name} by ${safeOwnerName}`);
+
+    // Broadcast to all connected notary clients if notarized
+    if (notarized) {
+      io.emit('documentNotarized', {
+        id: document.id,
+        name: document.name,
+        ownerName: document.ownerName,
+        size: document.size,
+        type: document.type,
+        uploadedAt: document.uploadedAt,
+        notarized: document.notarized,
+        notaryReview: document.notaryReview || 'pending',
+        notaryReviewedAt: document.notaryReviewedAt,
+      });
+      console.log(`📡 Broadcasted documentNotarized event to all clients`);
+    } else {
+      // Broadcast cancellation if notarized is false
+      io.emit('documentNotarizationCancelled', {
+        documentId: document.id,
+      });
+      console.log(`📡 Broadcasted documentNotarizationCancelled event for ${id}`);
+    }
+
+    res.json(document);
+  } catch (error) {
+    console.error('Error saving document:', error);
+    res.status(500).json({ error: 'Failed to save document', details: error.message });
+  }
+});
+
+// Get all notarized documents
+app.get('/api/documents/notarized', async (req, res) => {
+  try {
+    const documents = await Document.find({ notarized: true }).sort({ uploadedAt: -1 });
+    res.json(documents);
+  } catch (error) {
+    console.error('Error fetching notarized documents:', error);
+    res.status(500).json({ error: 'Failed to fetch documents' });
+  }
+});
+
+// Update notary review decision for a document
+app.put('/api/documents/:id/review', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { notaryReview, notaryName } = req.body;
+
+    if (!notaryReview || !['accepted', 'rejected', 'pending'].includes(notaryReview)) {
+      return res.status(400).json({ error: 'Invalid review status' });
+    }
+
+    const document = await Document.findOneAndUpdate(
+      { id },
+      {
+        notaryReview,
+        notaryReviewedAt: new Date(),
+        notaryName: notaryName || 'Unknown Notary',
+      },
+      { new: true }
+    );
+
+    if (!document) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    console.log(`✅ Document ${id} reviewed as ${notaryReview} by ${notaryName}`);
+
+    // Broadcast review update to all connected clients
+    io.emit('documentReviewUpdated', {
+      documentId: id,
+      notaryReview,
+      notaryName,
+      notaryReviewedAt: document.notaryReviewedAt,
+    });
+
+    res.json(document);
+  } catch (error) {
+    console.error('Error updating document review:', error);
+    res.status(500).json({ error: 'Failed to update document review' });
   }
 });
 

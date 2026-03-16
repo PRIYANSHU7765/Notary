@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { saveDocument } from "../utils/apiClient";
+import socket from "../socket/socket";
 
 const STORAGE_KEY = "notary.ownerDocs";
 
@@ -223,12 +225,33 @@ const OwnerDashboardPage = () => {
     navigator.clipboard.writeText(sessionId);
   };
 
-  const handleCancelNotarize = (doc) => {
+  const handleCancelNotarize = async (doc) => {
     const updated = docs.map((d) =>
       d.id === doc.id ? { ...d, notarized: false } : d
     );
     setDocs(updated);
     saveDocs(updated);
+
+    // Update backend to mark notarized=false
+    try {
+      await saveDocument({
+        id: doc.id,
+        name: doc.name,
+        ownerName: doc.ownerName,
+        size: doc.size,
+        type: doc.type,
+        uploadedAt: doc.uploadedAt,
+        notarized: false,
+      });
+
+      // Broadcast cancellation to notary dashboard via socket.io
+      socket.emit("documentNotarizationCancelled", {
+        documentId: doc.id,
+      });
+      console.log("📡 Emitted documentNotarizationCancelled event via socket");
+    } catch (error) {
+      console.error("Failed to cancel notarization:", error);
+    }
   };
 
   const handleDelete = (doc) => {
@@ -241,11 +264,20 @@ const OwnerDashboardPage = () => {
     const file = e.target.files[0];
     if (!file) return;
 
+    const ownerName = (() => {
+      try {
+        return JSON.parse(localStorage.getItem("notary.authUser") || "null")?.username || "Owner";
+      } catch {
+        return "Owner";
+      }
+    })();
+
     const reader = new FileReader();
     reader.onload = (ev) => {
       const newDoc = {
         id: `doc-${Date.now()}`,
         name: file.name,
+        ownerName,
         size: file.size,
         type: file.type,
         uploadedAt: new Date().toISOString(),
@@ -270,12 +302,45 @@ const OwnerDashboardPage = () => {
     setNotarizingDoc(doc);
   };
 
-  const handleConfirmNotarize = () => {
+  const handleConfirmNotarize = async () => {
+    const ownerName = (() => {
+      try {
+        return (
+          notarizingDoc?.ownerName ||
+          JSON.parse(localStorage.getItem("notary.authUser") || "null")?.username ||
+          "Owner"
+        );
+      } catch {
+        return notarizingDoc?.ownerName || "Owner";
+      }
+    })();
+
+    const updatedDoc = { ...notarizingDoc, ownerName, notarized: true };
     const updated = docs.map((d) =>
-      d.id === notarizingDoc.id ? { ...d, notarized: true } : d
+      d.id === notarizingDoc.id ? updatedDoc : d
     );
     setDocs(updated);
     saveDocs(updated);
+
+    // Save to backend
+    try {
+      const savedDoc = await saveDocument({
+        id: updatedDoc.id,
+        name: updatedDoc.name,
+        ownerName: updatedDoc.ownerName,
+        size: updatedDoc.size,
+        type: updatedDoc.type,
+        uploadedAt: updatedDoc.uploadedAt,
+        notarized: true,
+      });
+
+      // Broadcast to notary dashboard via socket.io
+      socket.emit("documentNotarized", savedDoc);
+      console.log("📡 Emitted documentNotarized event via socket");
+    } catch (error) {
+      console.error("Failed to sync notarized document to backend:", error);
+    }
+
     setNotarizingDoc(null);
   };
 
