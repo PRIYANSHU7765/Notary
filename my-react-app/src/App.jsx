@@ -2,6 +2,7 @@ import React from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import OwnerPage from './pages/OwnerPage'
 import OwnerDashboardPage from './pages/OwnerDashboardPage'
+import OwnerSessionPage from './pages/OwnerSessionPage'
 import NotaryPage from './pages/NotaryPage'
 import AdminPage from './pages/AdminPage'
 import AuthPage from './pages/AuthPage'
@@ -90,6 +91,16 @@ function App() {
             ) : (
               <Navigate to="/login" replace />
             )
+          }
+        />
+        <Route
+          path="/owner/session"
+          element={
+            <RequireAuth>
+              <RequireRole allowedRoles={['owner']}>
+                <OwnerSessionPage />
+              </RequireRole>
+            </RequireAuth>
           }
         />
         <Route

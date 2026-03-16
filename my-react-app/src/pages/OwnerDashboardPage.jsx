@@ -209,8 +209,19 @@ const NotarizeConfirmModal = ({ doc, onClose, onConfirm }) => {
 const OwnerDashboardPage = () => {
   const [docs, setDocs] = useState(loadDocs);
   const [notarizingDoc, setNotarizingDoc] = useState(null);
+  const [sessionId, setSessionId] = useState("");
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const id = localStorage.getItem("notary.ownerSessionId") || "";
+    setSessionId(id);
+  }, []);
+
+  const copySessionId = () => {
+    if (!sessionId) return;
+    navigator.clipboard.writeText(sessionId);
+  };
 
   const handleCancelNotarize = (doc) => {
     const updated = docs.map((d) =>
@@ -291,33 +302,80 @@ const OwnerDashboardPage = () => {
           <h1 style={{ margin: 0, fontSize: "22px", fontWeight: 700, color: "#1a1a2e" }}>
             My Documents
           </h1>
-          <p style={{ margin: "2px 0 0 0", fontSize: "13px", color: "#888" }}>
+          <p style={{ margin: "6px 0 0 0", fontSize: "13px", color: "#888" }}>
             Manage and track all your notarization documents
           </p>
+          {sessionId && (
+            <div style={{ marginTop: "10px", display: "flex", alignItems: "center", gap: "10px" }}>
+              <span style={{ fontSize: "12px", color: "#555" }}>
+                Session ID:
+                <span style={{ fontWeight: 700, marginLeft: "6px" }}>{sessionId}</span>
+              </span>
+              <button
+                onClick={copySessionId}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: "8px",
+                  border: "1px solid #d1d5db",
+                  background: "#fff",
+                  cursor: "pointer",
+                  fontSize: "12px",
+                  color: "#374151",
+                }}
+              >
+                Copy
+              </button>
+            </div>
+          )}
         </div>
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            padding: "10px 22px",
-            background: "#4f6ef7",
-            color: "#fff",
-            border: "none",
-            borderRadius: "10px",
-            cursor: "pointer",
-            fontSize: "14px",
-            fontWeight: 600,
-            boxShadow: "0 2px 8px rgba(79,110,247,0.3)",
-            transition: "background 0.15s, transform 0.1s",
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = "#3a58e0")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "#4f6ef7")}
-        >
-          <span style={{ fontSize: "18px" }}>+</span>
-          Upload File
-        </button>
+        <div style={{ display: "flex", gap: "12px" }}>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "10px 22px",
+              background: "#4f6ef7",
+              color: "#fff",
+              border: "none",
+              borderRadius: "10px",
+              cursor: "pointer",
+              fontSize: "14px",
+              fontWeight: 600,
+              boxShadow: "0 2px 8px rgba(79,110,247,0.3)",
+              transition: "background 0.15s, transform 0.1s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#3a58e0")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#4f6ef7")}
+          >
+            <span style={{ fontSize: "18px" }}>+</span>
+            Upload File
+          </button>
+
+          <button
+            onClick={() => navigate("/owner/session")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "10px 22px",
+              background: "#10b981",
+              color: "#fff",
+              border: "none",
+              borderRadius: "10px",
+              cursor: "pointer",
+              fontSize: "14px",
+              fontWeight: 600,
+              boxShadow: "0 2px 8px rgba(16,185,129,0.3)",
+              transition: "background 0.15s, transform 0.1s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#059669")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#10b981")}
+          >
+            Sessions
+          </button>
+        </div>
         <input
           ref={fileInputRef}
           type="file"

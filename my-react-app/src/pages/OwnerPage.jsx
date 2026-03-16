@@ -55,6 +55,7 @@ const OwnerPage = () => {
       roomId,
       role: "owner",
       userId: socket.id,
+      username: (() => { try { return JSON.parse(localStorage.getItem('notary.authUser') || 'null')?.username || 'Owner'; } catch { return 'Owner'; } })(),
     });
 
     // Listen for element updates from notary

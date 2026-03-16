@@ -344,6 +344,7 @@ io.on('connection', (socket) => {
     const roomId = normalizeRoomId(rawRoomId);
     const role = normalizeRole(data?.role);
     const userId = data?.userId || socket.id;
+    const username = data?.username || userId;
 
     if (!roomId || !role) {
       console.warn(`⚠️ Invalid joinSession payload from ${socket.id}:`, data);
@@ -351,7 +352,7 @@ io.on('connection', (socket) => {
     }
     
     socket.join(roomId);
-    userSessions.set(socket.id, { roomId, role, userId });
+    userSessions.set(socket.id, { roomId, role, userId, username });
 
     // Create session if doesn't exist
     if (!sessions.has(roomId)) {
@@ -360,7 +361,7 @@ io.on('connection', (socket) => {
 
     const session = sessions.get(roomId);
     session.users = session.users.filter((u) => u.socketId !== socket.id);
-    session.users.push({ socketId: socket.id, role, userId });
+    session.users.push({ socketId: socket.id, role, userId, username });
 
     console.log(`👤 ${role} joined session ${roomId}`);
 

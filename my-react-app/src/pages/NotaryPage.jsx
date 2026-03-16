@@ -71,6 +71,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         roomId: sessionId,
         role: "notary",
         userId: socket.id,
+        username: (() => { try { return JSON.parse(localStorage.getItem('notary.authUser') || 'null')?.username || 'Notary'; } catch { return 'Notary'; } })(),
       });
 
       // Listen for element updates from owner
