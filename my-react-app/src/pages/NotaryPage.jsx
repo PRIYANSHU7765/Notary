@@ -129,7 +129,6 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       setSessionId(normalized);
       setInputSessionId(normalized);
       setSessionJoined(true);
-      localStorage.setItem("notary.role", "notary");
       localStorage.setItem("notary.lastSessionId", normalized);
 
       const params = new URLSearchParams(window.location.search);
@@ -141,7 +140,6 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
 
   useEffect(() => {
     if (sessionJoined && sessionId) {
-      localStorage.setItem("notary.role", "notary");
       localStorage.setItem("notary.lastSessionId", sessionId);
 
       const params = new URLSearchParams(window.location.search);

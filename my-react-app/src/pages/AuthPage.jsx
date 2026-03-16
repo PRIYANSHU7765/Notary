@@ -41,6 +41,10 @@ const AuthPage = () => {
         password,
       })
 
+      localStorage.removeItem('notary.role')
+      localStorage.removeItem('notary.ownerSessionId')
+      localStorage.removeItem('notary.lastSessionId')
+      
       localStorage.setItem(
         AUTH_STORAGE_KEY,
         JSON.stringify({

@@ -44,7 +44,6 @@ const OwnerPage = () => {
     const roomId = roomIdFromUrl || roomIdFromStorage || `notary-session-${Date.now()}`;
 
     setSessionId(roomId);
-    localStorage.setItem("notary.role", "owner");
     localStorage.setItem("notary.ownerSessionId", roomId);
     localStorage.setItem("notary.lastSessionId", roomId);
 

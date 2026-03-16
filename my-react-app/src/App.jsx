@@ -1,6 +1,5 @@
 import React from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import HomePage from './pages/HomePage'
 import OwnerPage from './pages/OwnerPage'
 import NotaryPage from './pages/NotaryPage'
 import AdminPage from './pages/AdminPage'
@@ -22,7 +21,7 @@ const getDefaultRouteByRole = (role) => {
   if (role === 'owner') return '/owner'
   if (role === 'notary') return '/notary'
   if (role === 'admin') return '/admin'
-  return '/home'
+  return null
 }
 
 const isUserAuthenticated = () => {
@@ -69,17 +68,11 @@ function App() {
         <Route
           path="/"
           element={
-            <RequireAuth>
+            authenticated && defaultRoute ? (
               <Navigate to={defaultRoute} replace />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/home"
-          element={
-            <RequireAuth>
-              <HomePage />
-            </RequireAuth>
+            ) : (
+              <Navigate to="/login" replace />
+            )
           }
         />
         <Route
