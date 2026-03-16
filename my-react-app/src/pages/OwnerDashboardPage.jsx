@@ -244,6 +244,7 @@ const OwnerDashboardPage = () => {
   const [editorElements, setEditorElements] = useState([]);
   const [uploadedFile, setUploadedFile] = useState(restoredDashboardState.uploadedFile || null);
   const [uploadedFileName, setUploadedFileName] = useState(restoredDashboardState.uploadedFileName || "");
+  const lastAutoSharedDocKeyRef = useRef("");
   const editorScrollRef = useRef(null);
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
@@ -282,6 +283,32 @@ const OwnerDashboardPage = () => {
       setSessionDocName(doc.name || "");
     }
   }, [activeSessionDocId, docs, uploadedFile, sessionDocName]);
+
+  useEffect(() => {
+    if (!sessionJoined || !activeSessionDocId || !uploadedFile || notaries.length === 0) return;
+
+    const sessionIdToShare = activeSessions[activeSessionDocId];
+    if (!sessionIdToShare) return;
+
+    const resolvedFileName = uploadedFileName || sessionDocName || "document.pdf";
+    const shareKey = `${sessionIdToShare}:${resolvedFileName}:${String(uploadedFile).length}`;
+    if (lastAutoSharedDocKeyRef.current === shareKey) return;
+
+    socket.emit("documentShared", {
+      pdfDataUrl: uploadedFile,
+      fileName: resolvedFileName,
+    });
+    setSessionDocName(resolvedFileName);
+    lastAutoSharedDocKeyRef.current = shareKey;
+  }, [
+    sessionJoined,
+    activeSessionDocId,
+    activeSessions,
+    uploadedFile,
+    uploadedFileName,
+    sessionDocName,
+    notaries.length,
+  ]);
 
   useEffect(() => {
     const onNotarySessionStarted = (data) => {
@@ -410,6 +437,7 @@ const OwnerDashboardPage = () => {
     setSessionJoined(false);
     setUploadedFile(null);
     setUploadedFileName("");
+    lastAutoSharedDocKeyRef.current = "";
     localStorage.removeItem(DASHBOARD_STATE_KEY);
   };
 

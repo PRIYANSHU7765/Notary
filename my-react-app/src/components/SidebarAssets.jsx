@@ -1,41 +1,62 @@
 import React, { useState, useEffect } from "react";
 import SignaturePad from "./SignaturePad";
-import { fetchSignatures, saveSignature } from "../utils/apiClient";
+import { deleteSignature, fetchSignatures, saveSignature } from "../utils/apiClient";
+
+const BASE_ASSETS = [
+  {
+    id: "stamp-official",
+    name: "Official Stamp",
+    type: "stamp",
+    image: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='none' stroke='red' stroke-width='3'/%3E%3Ctext x='50' y='55' text-anchor='middle' font-size='12' fill='red' font-weight='bold'%3ENOTARIZED%3C/text%3E%3C/svg%3E",
+    user: "notary",
+  },
+  {
+    id: "stamp-approved",
+    name: "Approved Stamp",
+    type: "stamp",
+    image: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='none' stroke='green' stroke-width='3'/%3E%3Ctext x='50' y='55' text-anchor='middle' font-size='12' fill='green' font-weight='bold'%3EAPPROVED%3C/text%3E%3C/svg%3E",
+    user: "notary",
+  },
+  {
+    id: "signature-owner",
+    name: "Owner Signature",
+    type: "signature",
+    image:
+      "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 50'%3E%3Ctext x='10' y='35' font-family='cursive' font-size='32' fill='black'%3EOwner%3C/text%3E%3C/svg%3E",
+    user: "owner",
+  },
+  {
+    id: "signature-notary",
+    name: "Notary Signature",
+    type: "signature",
+    image:
+      "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 50'%3E%3Ctext x='10' y='35' font-family='cursive' font-size='32' fill='blue'%3ENotary%3C/text%3E%3C/svg%3E",
+    user: "notary",
+  },
+];
+
+const getHiddenAssetsStorageKey = (role) => `notary.hiddenAssets.${role}`;
+
+const loadHiddenAssetIds = (role) => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(getHiddenAssetsStorageKey(role)) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
 
 const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true, uploadedAsset }) => {
   const [showSignaturePad, setShowSignaturePad] = useState(false);
-  const [assets, setAssets] = useState([
-    {
-      id: "stamp-official",
-      name: "Official Stamp",
-      type: "stamp",
-      image: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='none' stroke='red' stroke-width='3'/%3E%3Ctext x='50' y='55' text-anchor='middle' font-size='12' fill='red' font-weight='bold'%3ENOTARIZED%3C/text%3E%3C/svg%3E",
-      user: "notary",
-    },
-    {
-      id: "stamp-approved",
-      name: "Approved Stamp",
-      type: "stamp",
-      image: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='none' stroke='green' stroke-width='3'/%3E%3Ctext x='50' y='55' text-anchor='middle' font-size='12' fill='green' font-weight='bold'%3EAPPROVED%3C/text%3E%3C/svg%3E",
-      user: "notary",
-    },
-    {
-      id: "signature-owner",
-      name: "Owner Signature",
-      type: "signature",
-      image:
-        "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 50'%3E%3Ctext x='10' y='35' font-family='cursive' font-size='32' fill='black'%3EOwner%3C/text%3E%3C/svg%3E",
-      user: "owner",
-    },
-    {
-      id: "signature-notary",
-      name: "Notary Signature",
-      type: "signature",
-      image:
-        "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 50'%3E%3Ctext x='10' y='35' font-family='cursive' font-size='32' fill='blue'%3ENotary%3C/text%3E%3C/svg%3E",
-      user: "notary",
-    },
-  ]);
+  const [assets, setAssets] = useState(() => {
+    const hidden = new Set(loadHiddenAssetIds(userRole));
+    return BASE_ASSETS.filter((asset) => !hidden.has(asset.id));
+  });
+
+  useEffect(() => {
+    const hidden = new Set(loadHiddenAssetIds(userRole));
+    setAssets(BASE_ASSETS.filter((asset) => !hidden.has(asset.id)));
+  }, [userRole]);
 
   // Fetch saved signatures from backend on mount
   useEffect(() => {
@@ -52,7 +73,15 @@ const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true, uploaded
           image: sig.image,
           user: sig.userRole,
         }));
-        setAssets(prev => [...prev, ...formattedSignatures]);
+
+        const hidden = new Set(loadHiddenAssetIds(userRole));
+        setAssets(prev => {
+          const existingIds = new Set(prev.map((asset) => asset.id));
+          const uniqueNewAssets = formattedSignatures.filter(
+            (asset) => !existingIds.has(asset.id) && !hidden.has(asset.id)
+          );
+          return [...prev, ...uniqueNewAssets];
+        });
       } catch (error) {
         console.error('[SidebarAssets] Error loading signatures:', error);
       }
@@ -65,11 +94,14 @@ const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true, uploaded
   useEffect(() => {
     if (!uploadedAsset) return;
 
+    const hidden = new Set(loadHiddenAssetIds(userRole));
+    if (hidden.has(uploadedAsset.id)) return;
+
     setAssets(prev => {
       if (prev.some((a) => a.id === uploadedAsset.id)) return prev;
       return [...prev, uploadedAsset];
     });
-  }, [uploadedAsset]);
+  }, [uploadedAsset, userRole]);
 
   const handleDragStart = (e, asset) => {
     // Prevent dragging when clicking the delete button
@@ -124,13 +156,26 @@ const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true, uploaded
     setShowSignaturePad(false);
   };
 
-  const handleDeleteAsset = (assetId) => {
+  const handleDeleteAsset = async (assetId) => {
     console.log("🗑️ Deleting asset:", assetId);
+
+    const assetToDelete = assets.find((asset) => asset.id === assetId);
+    const nextHiddenAssetIds = Array.from(new Set([...loadHiddenAssetIds(userRole), assetId]));
+    localStorage.setItem(getHiddenAssetsStorageKey(userRole), JSON.stringify(nextHiddenAssetIds));
+
     setAssets(prev => {
       const updated = prev.filter(asset => asset.id !== assetId);
       console.log("📦 Assets after delete:", updated.length);
       return updated;
     });
+
+    if (assetToDelete?.type === "signature") {
+      try {
+        await deleteSignature(assetId);
+      } catch (error) {
+        console.warn("[SidebarAssets] Signature delete not persisted on backend:", error?.message || error);
+      }
+    }
   };
 
   // Filter assets based on user role
