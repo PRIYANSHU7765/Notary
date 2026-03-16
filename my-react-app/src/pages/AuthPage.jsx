@@ -6,6 +6,21 @@ import './AuthPage.css'
 const AUTH_STORAGE_KEY = 'notary.authUser'
 const AUTH_SESSION_TTL_MS = 8 * 60 * 60 * 1000
 
+const getDefaultRouteByRole = (role) => {
+  if (role === 'owner') return '/owner'
+  if (role === 'notary') return '/notary'
+  if (role === 'admin') return '/admin'
+  return '/'
+}
+
+const isRoleRouteMatch = (role, path) => {
+  if (!path) return false
+  if (role === 'owner') return path.startsWith('/owner')
+  if (role === 'notary') return path.startsWith('/notary')
+  if (role === 'admin') return path.startsWith('/admin')
+  return false
+}
+
 const AuthPage = () => {
   const navigate = useNavigate()
   const location = useLocation()
@@ -56,7 +71,13 @@ const AuthPage = () => {
           expiresAt: Date.now() + AUTH_SESSION_TTL_MS,
         })
       )
-      navigate(redirectPath, { replace: true })
+
+      const defaultRoute = getDefaultRouteByRole(result.user.role)
+      const destination = isRoleRouteMatch(result.user.role, redirectPath)
+        ? redirectPath
+        : defaultRoute
+
+      navigate(destination, { replace: true })
     } catch (loginError) {
       setError(loginError.message || 'Invalid username or password. Please try again.')
     }

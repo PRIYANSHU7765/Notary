@@ -41,9 +41,25 @@ const isUserAuthenticated = () => {
 
 function RequireAuth({ children }) {
   const location = useLocation()
+  const authUser = getAuthUser()
 
-  if (!isUserAuthenticated()) {
+  if (!isUserAuthenticated() || !authUser) {
     return <Navigate to="/login" replace state={{ from: location }} />
+  }
+
+  return children
+}
+
+function RequireRole({ children, allowedRoles = [] }) {
+  const authUser = getAuthUser()
+
+  if (!authUser) {
+    return <Navigate to="/login" replace />
+  }
+
+  if (allowedRoles.length > 0 && !allowedRoles.includes(authUser.role)) {
+    const fallback = getDefaultRouteByRole(authUser.role)
+    return <Navigate to={fallback || '/'} replace />
   }
 
   return children
@@ -79,7 +95,9 @@ function App() {
           path="/owner"
           element={
             <RequireAuth>
-              <OwnerPage />
+              <RequireRole allowedRoles={['owner']}>
+                <OwnerPage />
+              </RequireRole>
             </RequireAuth>
           }
         />
@@ -87,7 +105,9 @@ function App() {
           path="/notary"
           element={
             <RequireAuth>
-              <NotaryPage />
+              <RequireRole allowedRoles={['notary']}>
+                <NotaryPage />
+              </RequireRole>
             </RequireAuth>
           }
         />
@@ -95,7 +115,9 @@ function App() {
           path="/admin"
           element={
             <RequireAuth>
-              <AdminPage />
+              <RequireRole allowedRoles={['admin']}>
+                <AdminPage />
+              </RequireRole>
             </RequireAuth>
           }
         />
