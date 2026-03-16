@@ -146,13 +146,16 @@ const CanvasBoard = ({
     const safeX = Math.max(0, Math.min(rawX, canvasWidth - 1));
     const safeY = Math.max(0, Math.min(rawY, canvasHeight - 1));
 
+    const defaultWidth = Math.max(24, Number(data.width) || 100);
+    const defaultHeight = Math.max(24, Number(data.height) || 100);
+
     const newElement = {
       id: Date.now().toString(),
       image: data.image,
       x: safeX,
       y: safeY,
-      width: 100,
-      height: 100,
+      width: defaultWidth,
+      height: defaultHeight,
       type: data.type,
       user: data.user,
     };

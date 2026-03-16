@@ -46,8 +46,24 @@ const loadHiddenAssetIds = (role) => {
   }
 };
 
+const escapeXml = (value = "") =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+
+const createTextAssetImage = (text) => {
+  const safeText = escapeXml(text);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 90"><text x="18" y="56" font-family="Segoe UI, Arial, sans-serif" font-size="36" font-weight="700" fill="#111827">${safeText}</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+};
+
 const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true, uploadedAsset, uploadedAssets = [] }) => {
   const [showSignaturePad, setShowSignaturePad] = useState(false);
+  const [showTextModal, setShowTextModal] = useState(false);
+  const [textInput, setTextInput] = useState("");
   const [assets, setAssets] = useState(() => {
     const hidden = new Set(loadHiddenAssetIds(userRole));
     return BASE_ASSETS.filter((asset) => !hidden.has(asset.id));
@@ -132,6 +148,9 @@ const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true, uploaded
         name: asset.name,
         type: asset.type,
         image: asset.image,
+        text: asset.text,
+        width: asset.width,
+        height: asset.height,
         user: asset.user,
       })
     );
@@ -192,10 +211,32 @@ const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true, uploaded
     }
   };
 
+  const handleSubmitTextAsset = () => {
+    const trimmed = textInput.trim();
+    if (!trimmed) return;
+
+    const previewText = trimmed.length > 30 ? `${trimmed.slice(0, 30)}...` : trimmed;
+    const newAsset = {
+      id: `text-${userRole}-${Date.now()}`,
+      name: `Text: ${previewText}`,
+      type: "text",
+      image: createTextAssetImage(trimmed),
+      text: trimmed,
+      width: 220,
+      height: 60,
+      user: userRole,
+    };
+
+    setAssets((prev) => [...prev, newAsset]);
+    onAssetGenerated?.(newAsset);
+    setTextInput("");
+    setShowTextModal(false);
+  };
+
   // Filter assets based on user role
   const visibleAssets = assets.filter(asset => {
-    // For all users, show their own drawn signatures and uploaded images
-    if ((asset.type === "signature" || asset.type === "image") && asset.user === userRole) {
+    // For all users, show their own drawn signatures, uploaded images, and added text assets
+    if ((asset.type === "signature" || asset.type === "image" || asset.type === "text") && asset.user === userRole) {
       return true;
     }
 
@@ -224,22 +265,40 @@ const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true, uploaded
 
       {/* Draw Signature Button */}
       {!showSignaturePad && (
-        <button
-          onClick={() => setShowSignaturePad(true)}
-          style={{
-            width: "100%",
-            padding: "10px",
-            marginBottom: "15px",
-            backgroundColor: "#2196F3",
-            color: "white",
-            border: "none",
-            borderRadius: "4px",
-            cursor: "pointer",
-            fontWeight: "bold",
-          }}
-        >
-          ✏️ Draw Signature
-        </button>
+        <>
+          <button
+            onClick={() => setShowSignaturePad(true)}
+            style={{
+              width: "100%",
+              padding: "10px",
+              marginBottom: "8px",
+              backgroundColor: "#2196F3",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: "pointer",
+              fontWeight: "bold",
+            }}
+          >
+            ✏️ Draw Signature
+          </button>
+          <button
+            onClick={() => setShowTextModal(true)}
+            style={{
+              width: "100%",
+              padding: "10px",
+              marginBottom: "15px",
+              backgroundColor: "#0ea5a4",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: "pointer",
+              fontWeight: "bold",
+            }}
+          >
+            🅰️ Add Text
+          </button>
+        </>
       )}
 
       {/* Signature Pad Modal */}
@@ -283,6 +342,88 @@ const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true, uploaded
             >
               Close
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Add Text Modal */}
+      {showTextModal && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "white",
+              padding: "20px",
+              borderRadius: "8px",
+              boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+              maxWidth: "420px",
+              width: "calc(100% - 30px)",
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: "10px" }}>Add Text Asset</h3>
+            <input
+              type="text"
+              placeholder="Enter text"
+              value={textInput}
+              onChange={(e) => setTextInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSubmitTextAsset();
+              }}
+              style={{
+                width: "100%",
+                padding: "10px",
+                border: "1px solid #d1d5db",
+                borderRadius: "4px",
+                marginBottom: "12px",
+                boxSizing: "border-box",
+              }}
+              autoFocus
+            />
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => {
+                  setTextInput("");
+                  setShowTextModal(false);
+                }}
+                style={{
+                  padding: "8px 14px",
+                  backgroundColor: "#e5e7eb",
+                  color: "#111827",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmitTextAsset}
+                disabled={!textInput.trim()}
+                style={{
+                  padding: "8px 14px",
+                  backgroundColor: textInput.trim() ? "#16a34a" : "#9ca3af",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: textInput.trim() ? "pointer" : "not-allowed",
+                  fontWeight: "bold",
+                }}
+              >
+                Submit
+              </button>
+            </div>
           </div>
         </div>
       )}
