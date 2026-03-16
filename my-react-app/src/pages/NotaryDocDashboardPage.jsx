@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { fetchNotarizedDocuments, updateDocumentReview } from '../utils/apiClient'
 import socket from '../socket/socket'
 
@@ -28,8 +29,20 @@ const getReviewBadgeStyle = (status) => {
 }
 
 const NotaryDocDashboardPage = () => {
+  const navigate = useNavigate()
   const [docs, setDocs] = useState([])
   const [loading, setLoading] = useState(true)
+
+  const handleStartSession = (doc) => {
+    const sessionId = `notary-session-${doc.id}`
+    console.log('📤 Emitting notarySessionStarted:', { documentId: doc.id, sessionId })
+    // Broadcast to owner that a session has started for this document
+    socket.emit('notarySessionStarted', {
+      documentId: doc.id,
+      sessionId: sessionId,
+    })
+    navigate(`/notary?sessionId=${encodeURIComponent(sessionId)}&role=notary`)
+  }
 
   // Load documents from backend on component mount
   useEffect(() => {
@@ -129,7 +142,7 @@ const NotaryDocDashboardPage = () => {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '2fr 1.2fr 1.4fr 1fr 1.5fr',
+              gridTemplateColumns: '2fr 1.2fr 1.4fr 1fr 1.2fr 1.5fr',
               gap: '12px',
               padding: '14px 18px',
               background: '#f8fafc',
@@ -143,6 +156,7 @@ const NotaryDocDashboardPage = () => {
             <span>Owner Name</span>
             <span>Uploaded</span>
             <span>Status</span>
+            <span>Session</span>
             <span>Actions</span>
           </div>
 
@@ -160,7 +174,7 @@ const NotaryDocDashboardPage = () => {
                   key={doc.id}
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '2fr 1.2fr 1.4fr 1fr 1.5fr',
+                    gridTemplateColumns: '2fr 1.2fr 1.4fr 1fr 1.2fr 1.5fr',
                     gap: '12px',
                     padding: '14px 18px',
                     alignItems: 'center',
@@ -184,6 +198,26 @@ const NotaryDocDashboardPage = () => {
                   >
                     {reviewStatus}
                   </span>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    {reviewStatus === 'accepted' ? (
+                      <button
+                        onClick={() => handleStartSession(doc)}
+                        style={{
+                          border: 'none',
+                          borderRadius: '8px',
+                          background: '#2563eb',
+                          color: '#ffffff',
+                          fontWeight: 600,
+                          padding: '8px 12px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Start Session
+                      </button>
+                    ) : null}
+                  </div>
+
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button
                       onClick={() => handleDecision(doc.id, 'accepted')}

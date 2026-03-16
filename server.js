@@ -521,16 +521,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle document upload notification
-  socket.on('documentUploaded', (data) => {
-    const userSession = userSessions.get(socket.id);
-    if (userSession) {
-      io.to(userSession.roomId).emit('documentUploaded', data);
-      console.log(`📄 Document uploaded: ${data.fileName}`);
-    }
-  });
-
-  // Handle full PDF data sharing — store in session and relay to others
+  // Handle document sharing — store in session and relay to others
   socket.on('documentShared', (data) => {
     const userSession = userSessions.get(socket.id);
     if (userSession) {
@@ -542,6 +533,12 @@ io.on('connection', (socket) => {
       socket.to(userSession.roomId).emit('documentShared', data);
       console.log(`📤 Document shared to room: ${data.fileName}`);
     }
+  });
+
+  // Handle notary starting a session — broadcast to all connected clients
+  socket.on('notarySessionStarted', (data) => {
+    console.log('🔔 Notary started session:', data);
+    io.emit('notarySessionStarted', data);
   });
 
   // Handle element added (signature/stamp placement)

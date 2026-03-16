@@ -212,6 +212,7 @@ const OwnerDashboardPage = () => {
   const [docs, setDocs] = useState(loadDocs);
   const [notarizingDoc, setNotarizingDoc] = useState(null);
   const [sessionId, setSessionId] = useState("");
+  const [activeSessions, setActiveSessions] = useState({});
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
 
@@ -219,6 +220,34 @@ const OwnerDashboardPage = () => {
     const id = localStorage.getItem("notary.ownerSessionId") || "";
     setSessionId(id);
   }, []);
+
+  useEffect(() => {
+    const onNotarySessionStarted = (data) => {
+      console.log('✅ Received notarySessionStarted event:', data);
+      setActiveSessions((prev) => {
+        const updated = {
+          ...prev,
+          [data.documentId]: data.sessionId,
+        };
+        console.log('Updated activeSessions:', updated);
+        return updated;
+      });
+    };
+
+    socket.on('notarySessionStarted', onNotarySessionStarted);
+
+    return () => {
+      socket.off('notarySessionStarted', onNotarySessionStarted);
+    };
+  }, []);
+
+  const handleJoinSession = (doc) => {
+    const sessionId = activeSessions[doc.id];
+    if (sessionId) {
+      localStorage.setItem("notary.ownerSessionId", sessionId);
+      navigate(`/owner/session`);
+    }
+  };
 
   const copySessionId = () => {
     if (!sessionId) return;
@@ -482,7 +511,7 @@ const OwnerDashboardPage = () => {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 120px 140px 48px",
+                gridTemplateColumns: "1fr 120px 140px 140px 48px",
                 padding: "12px 20px",
                 background: "#f9fafc",
                 borderBottom: "1px solid #e8eaed",
@@ -496,18 +525,20 @@ const OwnerDashboardPage = () => {
               <span>Document</span>
               <span>Size</span>
               <span>Uploaded</span>
+              <span>Session</span>
               <span></span>
             </div>
 
             {/* Rows */}
             {docs.map((doc, idx) => {
               const statusStyle = STATUS_COLORS[doc.status] || STATUS_COLORS["Pending"];
+              const hasActiveSession = activeSessions[doc.id];
               return (
                 <div
                   key={doc.id}
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr 120px 140px 48px",
+                    gridTemplateColumns: "1fr 120px 140px 140px 48px",
                     padding: "14px 20px",
                     alignItems: "center",
                     borderBottom: idx < docs.length - 1 ? "1px solid #f0f0f0" : "none",
@@ -591,6 +622,30 @@ const OwnerDashboardPage = () => {
 
                   {/* Date */}
                   <span style={{ fontSize: "12px", color: "#999" }}>{formatDate(doc.uploadedAt)}</span>
+
+                  {/* Session Button */}
+                  {hasActiveSession ? (
+                    <button
+                      onClick={() => handleJoinSession(doc)}
+                      style={{
+                        background: "#10b981",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: "8px",
+                        padding: "8px 16px",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        transition: "background 0.15s",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "#059669")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "#10b981")}
+                    >
+                      Join the session
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: "12px", color: "#ccc" }}>-</span>
+                  )}
 
                   {/* Three dots */}
                   <ThreeDotsMenu
