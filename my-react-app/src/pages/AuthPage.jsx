@@ -4,6 +4,7 @@ import { loginUser } from '../utils/apiClient'
 import './AuthPage.css'
 
 const AUTH_STORAGE_KEY = 'notary.authUser'
+const AUTH_SESSION_TTL_MS = 8 * 60 * 60 * 1000
 
 const AuthPage = () => {
   const navigate = useNavigate()
@@ -48,6 +49,7 @@ const AuthPage = () => {
           role: result.user.role,
           token: result.token,
           loggedInAt: Date.now(),
+          expiresAt: Date.now() + AUTH_SESSION_TTL_MS,
         })
       )
       navigate(redirectPath, { replace: true })
