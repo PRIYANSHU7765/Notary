@@ -46,7 +46,7 @@ const loadHiddenAssetIds = (role) => {
   }
 };
 
-const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true, uploadedAsset }) => {
+const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true, uploadedAsset, uploadedAssets = [] }) => {
   const [showSignaturePad, setShowSignaturePad] = useState(false);
   const [assets, setAssets] = useState(() => {
     const hidden = new Set(loadHiddenAssetIds(userRole));
@@ -97,18 +97,25 @@ const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true, uploaded
     const hidden = new Set(loadHiddenAssetIds(userRole));
     if (hidden.has(uploadedAsset.id)) return;
 
-    setAssets(prev => {
-      const withoutPreviousUploadedDocs = prev.filter(
-        (asset) => !(asset.source === "uploaded-document" && asset.user === userRole)
-      );
-
-      if (withoutPreviousUploadedDocs.some((asset) => asset.id === uploadedAsset.id)) {
-        return withoutPreviousUploadedDocs;
-      }
-
-      return [...withoutPreviousUploadedDocs, uploadedAsset];
+    setAssets((prev) => {
+      if (prev.some((a) => a.id === uploadedAsset.id)) return prev;
+      return [...prev, uploadedAsset];
     });
   }, [uploadedAsset, userRole]);
+
+  // Add all previously uploaded assets (from localStorage) when component mounts or uploadedAssets changes
+  useEffect(() => {
+    if (!uploadedAssets || uploadedAssets.length === 0) return;
+
+    const hidden = new Set(loadHiddenAssetIds(userRole));
+
+    setAssets((prev) => {
+      const newAssets = uploadedAssets.filter(
+        (asset) => !hidden.has(asset.id) && !prev.some((a) => a.id === asset.id)
+      );
+      return [...prev, ...newAssets];
+    });
+  }, [uploadedAssets, userRole]);
 
   const handleDragStart = (e, asset) => {
     // Prevent dragging when clicking the delete button

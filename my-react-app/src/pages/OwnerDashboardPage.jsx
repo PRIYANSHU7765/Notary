@@ -11,6 +11,19 @@ import { createDocumentDragAsset } from "../utils/documentAsset";
 const STORAGE_KEY = "notary.ownerDocs";
 const ACTIVE_SESSIONS_KEY = "notary.ownerActiveSessions";
 const DASHBOARD_STATE_KEY = "notary.ownerDashboardState";
+const UPLOADED_ASSETS_KEY = "notary.ownerUploadedAssets";
+
+const loadUploadedAssets = () => {
+  try {
+    return JSON.parse(localStorage.getItem(UPLOADED_ASSETS_KEY) || "[]");
+  } catch {
+    return [];
+  }
+};
+
+const saveUploadedAssets = (assets) => {
+  localStorage.setItem(UPLOADED_ASSETS_KEY, JSON.stringify(assets));
+};
 
 const loadDocs = () => {
   try {
@@ -245,7 +258,8 @@ const OwnerDashboardPage = () => {
   const [editorElements, setEditorElements] = useState([]);
   const [uploadedFile, setUploadedFile] = useState(restoredDashboardState.uploadedFile || null);
   const [uploadedFileName, setUploadedFileName] = useState(restoredDashboardState.uploadedFileName || "");
-  const [uploadedAsset, setUploadedAsset] = useState(restoredDashboardState.uploadedAsset || null);
+  const [uploadedAssets, setUploadedAssets] = useState(() => loadUploadedAssets());
+  const [uploadedAsset, setUploadedAsset] = useState(null);
   const lastAutoSharedDocKeyRef = useRef("");
   const editorScrollRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -269,10 +283,13 @@ const OwnerDashboardPage = () => {
         sessionDocName,
         uploadedFile,
         uploadedFileName,
-        uploadedAsset,
       })
     );
-  }, [activeSessionDocId, sessionJoined, sessionDocName, uploadedFile, uploadedFileName, uploadedAsset]);
+  }, [activeSessionDocId, sessionJoined, sessionDocName, uploadedFile, uploadedFileName]);
+
+  useEffect(() => {
+    saveUploadedAssets(uploadedAssets);
+  }, [uploadedAssets]);
 
   useEffect(() => {
     if (!activeSessionDocId || uploadedFile) return;
@@ -424,6 +441,7 @@ const OwnerDashboardPage = () => {
         userRole: "owner",
       });
 
+      setUploadedAssets((prev) => [...prev, asset]);
       setUploadedAsset(asset);
     };
     reader.readAsDataURL(file);
@@ -463,6 +481,18 @@ const OwnerDashboardPage = () => {
     lastAutoSharedDocKeyRef.current = "";
     localStorage.removeItem(DASHBOARD_STATE_KEY);
   };
+
+  const restoreUploadedAssets = () => {
+    uploadedAssets.forEach((asset) => {
+      setTimeout(() => setUploadedAsset(asset), 10);
+    });
+  };
+
+  useEffect(() => {
+    if (sessionJoined && uploadedAssets.length > 0) {
+      restoreUploadedAssets();
+    }
+  }, [sessionJoined]);
 
   const copySessionId = () => {
     if (!sessionId) return;
@@ -600,7 +630,7 @@ const OwnerDashboardPage = () => {
       {activeSessionDocId && sessionJoined ? (
         <div style={{ display: "flex", height: "100vh" }}>
           {/* Sidebar */}
-          <SidebarAssets userRole="owner" uploadedAsset={uploadedAsset} />
+          <SidebarAssets userRole="owner" uploadedAsset={uploadedAsset} uploadedAssets={uploadedAssets} />
 
           {/* Main Content */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "15px", overflowY: "auto" }}>

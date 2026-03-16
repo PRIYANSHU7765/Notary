@@ -29,6 +29,20 @@ const normalizeSessionId = (value) => {
   return match ? match[0] : raw;
 };
 
+const NOTARY_UPLOADED_ASSETS_KEY = "notary.notaryUploadedAssets";
+
+const loadNotaryUploadedAssets = () => {
+  try {
+    return JSON.parse(localStorage.getItem(NOTARY_UPLOADED_ASSETS_KEY) || "[]");
+  } catch {
+    return [];
+  }
+};
+
+const saveNotaryUploadedAssets = (assets) => {
+  localStorage.setItem(NOTARY_UPLOADED_ASSETS_KEY, JSON.stringify(assets));
+};
+
 const NotaryPage = ({ sessionId: passedSessionId }) => {
   const [elements, setElements] = useState([]);
   const [sessionId, setSessionId] = useState(passedSessionId || null);
@@ -38,6 +52,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   const [pdfDataUrl, setPdfDataUrl] = useState(null);
   const [ownerConnected, setOwnerConnected] = useState(false);
   const [sessionStatus, setSessionStatus] = useState(null);
+  const [uploadedAssets, setUploadedAssets] = useState(() => loadNotaryUploadedAssets());
   const [uploadedAsset, setUploadedAsset] = useState(null);
   const editorScrollRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -187,11 +202,28 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         userRole: "notary",
       });
 
+      setUploadedAssets((prev) => [...prev, asset]);
       setUploadedAsset(asset);
     };
     reader.readAsDataURL(file);
     e.target.value = "";
   };
+
+  useEffect(() => {
+    saveNotaryUploadedAssets(uploadedAssets);
+  }, [uploadedAssets]);
+
+  const restoreUploadedAssets = () => {
+    uploadedAssets.forEach((asset) => {
+      setTimeout(() => setUploadedAsset(asset), 10);
+    });
+  };
+
+  useEffect(() => {
+    if (sessionJoined && uploadedAssets.length > 0) {
+      restoreUploadedAssets();
+    }
+  }, [sessionJoined]);
 
   if (!sessionJoined) {
     return (
@@ -269,7 +301,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   return (
     <div style={{ display: "flex", height: "100vh" }}>
       {/* Sidebar */}
-      <SidebarAssets userRole="notary" uploadedAsset={uploadedAsset} />
+      <SidebarAssets userRole="notary" uploadedAsset={uploadedAsset} uploadedAssets={uploadedAssets} />
 
       {/* Main Content */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "15px", overflowY: "auto" }}>
