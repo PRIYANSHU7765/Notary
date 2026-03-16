@@ -33,7 +33,7 @@ const STATUS_COLORS = {
   Rejected: { bg: "#f8d7da", color: "#842029" },
 };
 
-const ThreeDotsMenu = ({ onView, onEditStatus }) => {
+const ThreeDotsMenu = ({ onView, onNotarize, onCancelNotarize, onDelete, notarized }) => {
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -92,12 +92,24 @@ const ThreeDotsMenu = ({ onView, onEditStatus }) => {
             👁 View
           </button>
           <button
-            onClick={() => { setOpen(false); onEditStatus(); }}
+            onClick={() => {
+              setOpen(false);
+              if (notarized) onCancelNotarize();
+              else onNotarize();
+            }}
             style={menuItemStyle}
             onMouseEnter={(e) => (e.currentTarget.style.background = "#f5f5f5")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
           >
-            ✏️ Edit Status
+            {notarized ? "🚫 Cancel notarize" : "✍️ Notarize"}
+          </button>
+          <button
+            onClick={() => { setOpen(false); onDelete(); }}
+            style={{ ...menuItemStyle, color: "#b91c1c" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#fef2f2")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
+          >
+            🗑 Delete
           </button>
         </div>
       )}
@@ -118,10 +130,7 @@ const menuItemStyle = {
   transition: "background 0.15s",
 };
 
-const EditStatusModal = ({ doc, onClose, onSave }) => {
-  const [status, setStatus] = useState(doc.status || "Pending");
-  const statuses = Object.keys(STATUS_COLORS);
-
+const NotarizeConfirmModal = ({ doc, onClose, onConfirm }) => {
   return (
     <div
       style={{
@@ -139,85 +148,57 @@ const EditStatusModal = ({ doc, onClose, onSave }) => {
         style={{
           background: "#fff",
           borderRadius: "12px",
-          padding: "28px 32px",
-          minWidth: "320px",
+          padding: "32px 36px",
+          minWidth: "340px",
           boxShadow: "0 8px 32px rgba(0,0,0,0.16)",
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 style={{ margin: "0 0 6px 0", fontSize: "17px", fontWeight: 700 }}>
-          Edit Status
-        </h3>
-        <p style={{ margin: "0 0 20px 0", color: "#777", fontSize: "13px" }}>
-          {doc.name}
-        </p>
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          {statuses.map((s) => (
-            <label
-              key={s}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                cursor: "pointer",
-                padding: "8px 12px",
-                borderRadius: "8px",
-                border: status === s ? "2px solid #4f6ef7" : "2px solid #eee",
-                background: status === s ? "#f0f4ff" : "#fff",
-                transition: "all 0.15s",
-              }}
-            >
-              <input
-                type="radio"
-                name="status"
-                value={s}
-                checked={status === s}
-                onChange={() => setStatus(s)}
-                style={{ accentColor: "#4f6ef7" }}
-              />
-              <span
-                style={{
-                  background: STATUS_COLORS[s].bg,
-                  color: STATUS_COLORS[s].color,
-                  padding: "2px 10px",
-                  borderRadius: "12px",
-                  fontSize: "13px",
-                  fontWeight: 600,
-                }}
-              >
-                {s}
-              </span>
-            </label>
-          ))}
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: "48px", marginBottom: "16px" }}>📋</div>
+          <h3 style={{ margin: "0 0 8px 0", fontSize: "18px", fontWeight: 700, color: "#1a1a2e" }}>
+            Notarize Document?
+          </h3>
+          <p style={{ margin: "0 0 24px 0", color: "#777", fontSize: "14px", lineHeight: "1.5" }}>
+            Do you want to notarize <strong>{doc.name}</strong>?
+          </p>
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "24px" }}>
+        <div style={{ display: "flex", justifyContent: "center", gap: "12px", marginTop: "28px" }}>
           <button
             onClick={onClose}
             style={{
-              padding: "8px 20px",
+              padding: "10px 28px",
               border: "1px solid #ddd",
               borderRadius: "8px",
               background: "#fff",
               cursor: "pointer",
               fontSize: "14px",
+              fontWeight: 600,
+              color: "#333",
+              transition: "background 0.15s",
             }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#f5f5f5")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
           >
-            Cancel
+            No
           </button>
           <button
-            onClick={() => onSave(status)}
+            onClick={() => { onClose(); onConfirm(); }}
             style={{
-              padding: "8px 20px",
+              padding: "10px 28px",
               border: "none",
               borderRadius: "8px",
-              background: "#4f6ef7",
+              background: "#22c55e",
               color: "#fff",
               cursor: "pointer",
               fontSize: "14px",
               fontWeight: 600,
+              transition: "background 0.15s",
             }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "#16a34a")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "#22c55e")}
           >
-            Save
+            Yes
           </button>
         </div>
       </div>
@@ -227,9 +208,23 @@ const EditStatusModal = ({ doc, onClose, onSave }) => {
 
 const OwnerDashboardPage = () => {
   const [docs, setDocs] = useState(loadDocs);
-  const [editingDoc, setEditingDoc] = useState(null);
+  const [notarizingDoc, setNotarizingDoc] = useState(null);
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
+
+  const handleCancelNotarize = (doc) => {
+    const updated = docs.map((d) =>
+      d.id === doc.id ? { ...d, notarized: false } : d
+    );
+    setDocs(updated);
+    saveDocs(updated);
+  };
+
+  const handleDelete = (doc) => {
+    const updated = docs.filter((d) => d.id !== doc.id);
+    setDocs(updated);
+    saveDocs(updated);
+  };
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -244,6 +239,7 @@ const OwnerDashboardPage = () => {
         type: file.type,
         uploadedAt: new Date().toISOString(),
         status: "Pending",
+        notarized: false,
         dataUrl: ev.target.result,
       };
       const updated = [newDoc, ...docs];
@@ -259,17 +255,17 @@ const OwnerDashboardPage = () => {
     navigate(`/owner?docId=${doc.id}`);
   };
 
-  const handleEditStatus = (doc) => {
-    setEditingDoc(doc);
+  const handleNotarize = (doc) => {
+    setNotarizingDoc(doc);
   };
 
-  const handleSaveStatus = (newStatus) => {
+  const handleConfirmNotarize = () => {
     const updated = docs.map((d) =>
-      d.id === editingDoc.id ? { ...d, status: newStatus } : d
+      d.id === notarizingDoc.id ? { ...d, notarized: true } : d
     );
     setDocs(updated);
     saveDocs(updated);
-    setEditingDoc(null);
+    setNotarizingDoc(null);
   };
 
   const formatSize = (bytes) => {
@@ -355,7 +351,7 @@ const OwnerDashboardPage = () => {
               background: "#fff",
               borderRadius: "12px",
               border: "1px solid #e8eaed",
-              overflow: "hidden",
+              overflow: "visible",
               boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
             }}
           >
@@ -410,9 +406,32 @@ const OwnerDashboardPage = () => {
                         justifyContent: "center",
                         fontSize: "18px",
                         flexShrink: 0,
+                        position: "relative",
                       }}
                     >
                       📄
+                      {doc.notarized && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            bottom: "-4px",
+                            right: "-4px",
+                            width: "18px",
+                            height: "18px",
+                            background: "#22c55e",
+                            borderRadius: "50%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "12px",
+                            color: "#fff",
+                            fontWeight: "bold",
+                            border: "2px solid #fff",
+                          }}
+                        >
+                          ✓
+                        </div>
+                      )}
                     </div>
                     <div style={{ overflow: "hidden" }}>
                       <div
@@ -431,15 +450,15 @@ const OwnerDashboardPage = () => {
                         style={{
                           display: "inline-block",
                           marginTop: "3px",
-                          background: statusStyle.bg,
-                          color: statusStyle.color,
+                          background: doc.notarized ? "#d1e7dd" : statusStyle.bg,
+                          color: doc.notarized ? "#0f5132" : statusStyle.color,
                           padding: "1px 8px",
                           borderRadius: "10px",
                           fontSize: "11px",
                           fontWeight: 600,
                         }}
                       >
-                        {doc.status}
+                        {doc.notarized ? "✓ Notarized" : doc.status}
                       </span>
                     </div>
                   </div>
@@ -453,7 +472,10 @@ const OwnerDashboardPage = () => {
                   {/* Three dots */}
                   <ThreeDotsMenu
                     onView={() => handleView(doc)}
-                    onEditStatus={() => handleEditStatus(doc)}
+                    onNotarize={() => handleNotarize(doc)}
+                    onCancelNotarize={() => handleCancelNotarize(doc)}
+                    onDelete={() => handleDelete(doc)}
+                    notarized={doc.notarized}
                   />
                 </div>
               );
@@ -462,12 +484,12 @@ const OwnerDashboardPage = () => {
         )}
       </div>
 
-      {/* Edit Status Modal */}
-      {editingDoc && (
-        <EditStatusModal
-          doc={editingDoc}
-          onClose={() => setEditingDoc(null)}
-          onSave={handleSaveStatus}
+      {/* Notarize Confirmation Modal */}
+      {notarizingDoc && (
+        <NotarizeConfirmModal
+          doc={notarizingDoc}
+          onClose={() => setNotarizingDoc(null)}
+          onConfirm={handleConfirmNotarize}
         />
       )}
     </div>
