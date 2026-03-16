@@ -1,18 +1,9 @@
 import React, { useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { loginUser } from '../utils/apiClient'
 import './AuthPage.css'
 
-const USERS_STORAGE_KEY = 'notary.users'
 const AUTH_STORAGE_KEY = 'notary.authUser'
-
-const getRegisteredUsers = () => {
-  try {
-    const users = JSON.parse(localStorage.getItem(USERS_STORAGE_KEY) || '[]')
-    return Array.isArray(users) ? users : []
-  } catch {
-    return []
-  }
-}
 
 const AuthPage = () => {
   const navigate = useNavigate()
@@ -33,30 +24,36 @@ const AuthPage = () => {
     setError('')
   }
 
-  const handleLogin = (event) => {
+  const handleLogin = async (event) => {
     event.preventDefault()
     clearMessages()
+    setSuccess('')
 
     if (!username.trim() || !password.trim()) {
       setError('Username and password are required.')
       return
     }
 
-    const users = getRegisteredUsers()
-    const matchedUser = users.find(
-      (user) => user.username === username.trim() && user.password === password
-    )
+    try {
+      const result = await loginUser({
+        username: username.trim(),
+        password,
+      })
 
-    if (!matchedUser) {
-      setError('Invalid username or password. Please try again or register.')
-      return
+      localStorage.setItem(
+        AUTH_STORAGE_KEY,
+        JSON.stringify({
+          username: result.user.username,
+          email: result.user.email,
+          role: result.user.role,
+          token: result.token,
+          loggedInAt: Date.now(),
+        })
+      )
+      navigate(redirectPath, { replace: true })
+    } catch (loginError) {
+      setError(loginError.message || 'Invalid username or password. Please try again.')
     }
-
-    localStorage.setItem(
-      AUTH_STORAGE_KEY,
-      JSON.stringify({ username: matchedUser.username, loggedInAt: Date.now() })
-    )
-    navigate(redirectPath, { replace: true })
   }
 
   const moveToRegister = () => {

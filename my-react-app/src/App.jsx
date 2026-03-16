@@ -13,7 +13,7 @@ const AUTH_STORAGE_KEY = 'notary.authUser'
 const isUserAuthenticated = () => {
   try {
     const authUser = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || 'null')
-    return Boolean(authUser?.username)
+    return Boolean(authUser?.username && authUser?.token)
   } catch {
     return false
   }

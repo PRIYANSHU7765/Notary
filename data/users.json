@@ -1,0 +1,23 @@
+[
+  {
+    "username": "user1773640424",
+    "email": "user1773640424@example.com",
+    "passwordHash": "32bc8cfe40909029fdad71f1c8c955ee:f5ca299778e52fe5543dbf8def3de44e3680575d9fe64226dea79c804096f8a436ef39c203dd8a3642875a26bc321c32374951bbfc42da84d9eb6737c09aba4d",
+    "role": "owner",
+    "createdAt": "2026-03-16T05:53:44.910Z"
+  },
+  {
+    "username": "John",
+    "email": "john@gmail.com",
+    "passwordHash": "c0839435f8c5f482aa9a91d1c3eccd43:66cc9ab720fccccafd42b5b141c7bfcff68f55037ddb551115722f1b50f7b057239940e742edb6e23dcf1308b2979aed4378046ed52d725cf348739fc440b8a3",
+    "role": "owner",
+    "createdAt": "2026-03-16T05:56:48.794Z"
+  },
+  {
+    "username": "Alex",
+    "email": "alex@gmail.com",
+    "passwordHash": "d027710d6a74f70444fce1f04c720bed:99a836e59bf25111ceff8e3c5ee17a609b95997a528890d7b82dbfe6bcad210fa6e0ab2a4d61d51c1d7707572c629e3ff9d798369d2f4bc48bc2ee674a75a2e2",
+    "role": "notary",
+    "createdAt": "2026-03-16T05:57:25.168Z"
+  }
+]

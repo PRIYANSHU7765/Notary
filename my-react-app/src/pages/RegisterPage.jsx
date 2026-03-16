@@ -1,17 +1,7 @@
 import React, { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { registerUser } from '../utils/apiClient'
 import './RegisterPage.css'
-
-const USERS_STORAGE_KEY = 'notary.users'
-
-const getRegisteredUsers = () => {
-  try {
-    const users = JSON.parse(localStorage.getItem(USERS_STORAGE_KEY) || '[]')
-    return Array.isArray(users) ? users : []
-  } catch {
-    return []
-  }
-}
 
 const RegisterPage = () => {
   const navigate = useNavigate()
@@ -32,7 +22,7 @@ const RegisterPage = () => {
     })
   }
 
-  const handleRegister = (event) => {
+  const handleRegister = async (event) => {
     event.preventDefault()
     setError('')
 
@@ -59,37 +49,18 @@ const RegisterPage = () => {
       return
     }
 
-    const users = getRegisteredUsers()
-    const usernameTaken = users.some(
-      (user) => user.username.toLowerCase() === normalizedUsername.toLowerCase()
-    )
-
-    if (usernameTaken) {
-      setError('This username is already registered.')
-      return
-    }
-
-    const emailTaken = users.some(
-      (user) => (user.email || '').toLowerCase() === normalizedEmail
-    )
-
-    if (emailTaken) {
-      setError('This email is already registered.')
-      return
-    }
-
-    const updatedUsers = [
-      ...users,
-      {
+    try {
+      await registerUser({
         username: normalizedUsername,
         email: normalizedEmail,
         password,
+        newPassword,
         role,
-      },
-    ]
-
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedUsers))
-    moveToLogin()
+      })
+      moveToLogin()
+    } catch (registerError) {
+      setError(registerError.message || 'Registration failed. Please try again.')
+    }
   }
 
   return (
