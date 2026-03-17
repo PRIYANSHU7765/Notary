@@ -160,9 +160,7 @@ const OwnerPage = () => {
   useEffect(() => {
     if (sessionId) {
       const savedElements = loadOwnerElements(sessionId);
-      if (savedElements.length > 0) {
-        setElements(savedElements);
-      }
+      setElements(savedElements);
     }
   }, [sessionId]);
 

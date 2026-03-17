@@ -30,18 +30,20 @@ const normalizeSessionId = (value) => {
   return match ? match[0] : raw;
 };
 
-const NOTARY_UPLOADED_ASSETS_KEY = "notary.notaryUploadedAssets";
+const getNotaryUploadedAssetsStorageKey = (sessionId) => `notary.uploadedAssets.${sessionId}`;
 
-const loadNotaryUploadedAssets = () => {
+const loadNotaryUploadedAssets = (sessionId) => {
+  if (!sessionId) return [];
   try {
-    return JSON.parse(localStorage.getItem(NOTARY_UPLOADED_ASSETS_KEY) || "[]");
+    return JSON.parse(localStorage.getItem(getNotaryUploadedAssetsStorageKey(sessionId)) || "[]");
   } catch {
     return [];
   }
 };
 
-const saveNotaryUploadedAssets = (assets) => {
-  localStorage.setItem(NOTARY_UPLOADED_ASSETS_KEY, JSON.stringify(assets));
+const saveNotaryUploadedAssets = (sessionId, assets) => {
+  if (!sessionId) return;
+  localStorage.setItem(getNotaryUploadedAssetsStorageKey(sessionId), JSON.stringify(assets));
 };
 
 const getNotaryElementsStorageKey = (sessionId) => `notary.elements.${sessionId}`;
@@ -69,7 +71,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   const [pdfDataUrl, setPdfDataUrl] = useState(null);
   const [ownerConnected, setOwnerConnected] = useState(false);
   const [sessionStatus, setSessionStatus] = useState(null);
-  const [uploadedAssets, setUploadedAssets] = useState(() => loadNotaryUploadedAssets());
+  const [uploadedAssets, setUploadedAssets] = useState([]);
   const [uploadedAsset, setUploadedAsset] = useState(null);
   const [isAssetBoxMode, setIsAssetBoxMode] = useState(false);
   const editorScrollRef = useRef(null);
@@ -86,14 +88,20 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   // If session ID came from URL, treat it as already set
   useEffect(() => {
     if (initialSessionId && !sessionId) {
-      // Clear uploaded assets for a fresh document session when auto-joining from URL
-      setUploadedAssets([]);
-      setUploadedAsset(null);
-      localStorage.removeItem(NOTARY_UPLOADED_ASSETS_KEY);
-      
       setSessionId(initialSessionId);
     }
   }, []);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setUploadedAssets([]);
+      setUploadedAsset(null);
+      return;
+    }
+
+    setUploadedAssets(loadNotaryUploadedAssets(sessionId));
+    setUploadedAsset(null);
+  }, [sessionId]);
 
   // Track backend connection status
   useEffect(() => {
@@ -162,6 +170,8 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
           setSessionId(null);
           setInputSessionId("");
           setElements([]);
+          setUploadedAssets([]);
+          setUploadedAsset(null);
           setPdfDataUrl(null);
           setDocumentInfo(null);
           setOwnerConnected(false);
@@ -185,11 +195,9 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   const handleJoinSession = () => {
     const normalized = normalizeSessionId(inputSessionId);
     if (normalized) {
-      // Clear uploaded assets for a fresh document session
+      setElements([]);
       setUploadedAssets([]);
       setUploadedAsset(null);
-      localStorage.removeItem(NOTARY_UPLOADED_ASSETS_KEY);
-      
       setSessionId(normalized);
       setInputSessionId(normalized);
       setSessionJoined(true);
@@ -214,6 +222,8 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
     setSessionId(null);
     setInputSessionId("");
     setElements([]);
+    setUploadedAssets([]);
+    setUploadedAsset(null);
     setPdfDataUrl(null);
     setDocumentInfo(null);
     setOwnerConnected(false);
@@ -305,8 +315,8 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   };
 
   useEffect(() => {
-    saveNotaryUploadedAssets(uploadedAssets);
-  }, [uploadedAssets]);
+    saveNotaryUploadedAssets(sessionId, uploadedAssets);
+  }, [sessionId, uploadedAssets]);
 
   const restoreUploadedAssets = () => {
     uploadedAssets.forEach((asset) => {
@@ -318,15 +328,13 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
     if (sessionJoined && uploadedAssets.length > 0) {
       restoreUploadedAssets();
     }
-  }, [sessionJoined]);
+  }, [sessionJoined, uploadedAssets]);
 
   // Load notary elements from localStorage on session join
   useEffect(() => {
     if (sessionJoined && sessionId) {
       const savedElements = loadNotaryElements(sessionId);
-      if (savedElements.length > 0) {
-        setElements(savedElements);
-      }
+      setElements(savedElements);
     }
   }, [sessionJoined, sessionId]);
 
@@ -406,7 +414,13 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   return (
     <div style={{ display: "flex", height: "100vh" }}>
       {/* Sidebar */}
-      <SidebarAssets userRole="notary" uploadedAsset={uploadedAsset} uploadedAssets={uploadedAssets} onAssetBoxClick={() => setIsAssetBoxMode(true)} />
+      <SidebarAssets
+        userRole="notary"
+        uploadedAsset={uploadedAsset}
+        uploadedAssets={uploadedAssets}
+        onAssetBoxClick={() => setIsAssetBoxMode(true)}
+        assetScopeKey={sessionId || "notary-no-session"}
+      />
 
       {/* Main Content */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "15px", overflowY: "auto" }}>

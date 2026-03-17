@@ -46,6 +46,11 @@ const loadHiddenAssetIds = (role) => {
   }
 };
 
+const getBaseAssets = (role) => {
+  const hidden = new Set(loadHiddenAssetIds(role));
+  return BASE_ASSETS.filter((asset) => !hidden.has(asset.id));
+};
+
 const escapeXml = (value = "") =>
   value
     .replace(/&/g, "&amp;")
@@ -60,19 +65,26 @@ const createTextAssetImage = (text) => {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 };
 
-const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true, uploadedAsset, uploadedAssets = [], onAssetBoxClick }) => {
+const SidebarAssets = ({
+  userRole,
+  onAssetGenerated,
+  showAssets = true,
+  uploadedAsset,
+  uploadedAssets = [],
+  onAssetBoxClick,
+  assetScopeKey = "default",
+}) => {
   const [showSignaturePad, setShowSignaturePad] = useState(false);
   const [showTextModal, setShowTextModal] = useState(false);
   const [textInput, setTextInput] = useState("");
-  const [assets, setAssets] = useState(() => {
-    const hidden = new Set(loadHiddenAssetIds(userRole));
-    return BASE_ASSETS.filter((asset) => !hidden.has(asset.id));
-  });
+  const [assets, setAssets] = useState(() => getBaseAssets(userRole));
 
   useEffect(() => {
-    const hidden = new Set(loadHiddenAssetIds(userRole));
-    setAssets(BASE_ASSETS.filter((asset) => !hidden.has(asset.id)));
-  }, [userRole]);
+    setAssets(getBaseAssets(userRole));
+    setShowSignaturePad(false);
+    setShowTextModal(false);
+    setTextInput("");
+  }, [userRole, assetScopeKey]);
 
   // Fetch saved signatures from backend on mount
   useEffect(() => {
@@ -104,7 +116,7 @@ const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true, uploaded
     };
 
     loadSignatures();
-  }, [userRole]);
+  }, [userRole, assetScopeKey]);
 
   // Add uploaded document as asset whenever it changes
   useEffect(() => {

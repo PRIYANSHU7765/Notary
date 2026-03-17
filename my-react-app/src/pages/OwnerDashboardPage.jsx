@@ -11,20 +11,25 @@ import { createDocumentDragAsset } from "../utils/documentAsset";
 const STORAGE_KEY = "notary.ownerDocs";
 const ACTIVE_SESSIONS_KEY = "notary.ownerActiveSessions";
 const DASHBOARD_STATE_KEY = "notary.ownerDashboardState";
-const UPLOADED_ASSETS_KEY = "notary.ownerUploadedAssets";
-const EDITOR_ELEMENTS_KEY = "notary.ownerEditorElements";
+const UPLOADED_ASSETS_KEY_PREFIX = "notary.ownerUploadedAssets";
+const EDITOR_ELEMENTS_KEY_PREFIX = "notary.ownerEditorElements";
 const PREVIOUS_SESSIONS_KEY = "notary.ownerPreviousSessions";
 
-const loadUploadedAssets = () => {
+const getUploadedAssetsStorageKey = (docId) => `${UPLOADED_ASSETS_KEY_PREFIX}.${docId}`;
+const getEditorElementsStorageKey = (docId) => `${EDITOR_ELEMENTS_KEY_PREFIX}.${docId}`;
+
+const loadUploadedAssets = (docId) => {
+  if (!docId) return [];
   try {
-    return JSON.parse(localStorage.getItem(UPLOADED_ASSETS_KEY) || "[]");
+    return JSON.parse(localStorage.getItem(getUploadedAssetsStorageKey(docId)) || "[]");
   } catch {
     return [];
   }
 };
 
-const saveUploadedAssets = (assets) => {
-  localStorage.setItem(UPLOADED_ASSETS_KEY, JSON.stringify(assets));
+const saveUploadedAssets = (docId, assets) => {
+  if (!docId) return;
+  localStorage.setItem(getUploadedAssetsStorageKey(docId), JSON.stringify(assets));
 };
 
 const loadDocs = () => {
@@ -69,16 +74,18 @@ const loadDashboardState = () => {
   }
 };
 
-const loadEditorElements = () => {
+const loadEditorElements = (docId) => {
+  if (!docId) return [];
   try {
-    return JSON.parse(localStorage.getItem(EDITOR_ELEMENTS_KEY) || "[]");
+    return JSON.parse(localStorage.getItem(getEditorElementsStorageKey(docId)) || "[]");
   } catch {
     return [];
   }
 };
 
-const saveEditorElements = (elements) => {
-  localStorage.setItem(EDITOR_ELEMENTS_KEY, JSON.stringify(elements));
+const saveEditorElements = (docId, elements) => {
+  if (!docId) return;
+  localStorage.setItem(getEditorElementsStorageKey(docId), JSON.stringify(elements));
 };
 
 const formatDate = (iso) => {
@@ -285,10 +292,10 @@ const OwnerDashboardPage = () => {
   const [sessionDocName, setSessionDocName] = useState(restoredDashboardState.sessionDocName || "");
   const [isConnected, setIsConnected] = useState(socket.connected);
   const [sessionJoined, setSessionJoined] = useState(Boolean(restoredDashboardState.sessionJoined));
-  const [editorElements, setEditorElements] = useState(() => loadEditorElements());
+  const [editorElements, setEditorElements] = useState([]);
   const [uploadedFile, setUploadedFile] = useState(restoredDashboardState.uploadedFile || null);
   const [uploadedFileName, setUploadedFileName] = useState(restoredDashboardState.uploadedFileName || "");
-  const [uploadedAssets, setUploadedAssets] = useState(() => loadUploadedAssets());
+  const [uploadedAssets, setUploadedAssets] = useState([]);
   const [uploadedAsset, setUploadedAsset] = useState(null);
   const lastAutoSharedDocKeyRef = useRef("");
   const currentSessionIdRef = useRef(null);
@@ -323,12 +330,25 @@ const OwnerDashboardPage = () => {
   }, [activeSessionDocId, sessionJoined, sessionDocName, uploadedFile, uploadedFileName]);
 
   useEffect(() => {
-    saveUploadedAssets(uploadedAssets);
-  }, [uploadedAssets]);
+    saveUploadedAssets(activeSessionDocId, uploadedAssets);
+  }, [activeSessionDocId, uploadedAssets]);
 
   useEffect(() => {
-    saveEditorElements(editorElements);
-  }, [editorElements]);
+    saveEditorElements(activeSessionDocId, editorElements);
+  }, [activeSessionDocId, editorElements]);
+
+  useEffect(() => {
+    if (!activeSessionDocId) {
+      setUploadedAssets([]);
+      setUploadedAsset(null);
+      setEditorElements([]);
+      return;
+    }
+
+    setUploadedAssets(loadUploadedAssets(activeSessionDocId));
+    setUploadedAsset(null);
+    setEditorElements(loadEditorElements(activeSessionDocId));
+  }, [activeSessionDocId]);
 
   useEffect(() => {
     if (!activeSessionDocId || uploadedFile) return;
@@ -552,7 +572,6 @@ const OwnerDashboardPage = () => {
         socket.emit("documentShared", { pdfDataUrl: doc.dataUrl, fileName: doc.name || "document.pdf" });
       }
     }
-    // Don't clear editorElements - they should persist across sessions
     setSessionJoined(true);
   };
 
@@ -636,7 +655,7 @@ const OwnerDashboardPage = () => {
     if (sessionJoined && uploadedAssets.length > 0) {
       restoreUploadedAssets();
     }
-  }, [sessionJoined]);
+  }, [sessionJoined, uploadedAssets]);
 
   const copySessionId = () => {
     if (!sessionId) return;
@@ -774,7 +793,12 @@ const OwnerDashboardPage = () => {
       {activeSessionDocId && sessionJoined ? (
         <div style={{ display: "flex", height: "100vh" }}>
           {/* Sidebar */}
-          <SidebarAssets userRole="owner" uploadedAsset={uploadedAsset} uploadedAssets={uploadedAssets} />
+          <SidebarAssets
+            userRole="owner"
+            uploadedAsset={uploadedAsset}
+            uploadedAssets={uploadedAssets}
+            assetScopeKey={activeSessionDocId || "owner-no-doc"}
+          />
 
           {/* Main Content */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "15px", overflowY: "auto" }}>
