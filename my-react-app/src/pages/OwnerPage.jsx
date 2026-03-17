@@ -11,6 +11,22 @@ import socket from "../socket/socket";
 const EDITOR_WIDTH = 900;
 const EDITOR_HEIGHT = 1300;
 
+const getOwnerElementsStorageKey = (sessionId) => `owner.elements.${sessionId}`;
+
+const loadOwnerElements = (sessionId) => {
+  if (!sessionId) return [];
+  try {
+    return JSON.parse(localStorage.getItem(getOwnerElementsStorageKey(sessionId)) || "[]");
+  } catch {
+    return [];
+  }
+};
+
+const saveOwnerElements = (sessionId, elements) => {
+  if (!sessionId) return;
+  localStorage.setItem(getOwnerElementsStorageKey(sessionId), JSON.stringify(elements));
+};
+
 const OwnerPage = () => {
   const navigate = useNavigate();
   const editorScrollRef = useRef(null);
@@ -139,6 +155,16 @@ const OwnerPage = () => {
       socket.off("sessionStatus");
     };
   }, []);
+
+  // Load owner elements from localStorage when sessionId is available
+  useEffect(() => {
+    if (sessionId) {
+      const savedElements = loadOwnerElements(sessionId);
+      if (savedElements.length > 0) {
+        setElements(savedElements);
+      }
+    }
+  }, [sessionId]);
 
   const handleCopyNotaryLink = () => {
     if (!sessionId) return;
@@ -287,7 +313,9 @@ const OwnerPage = () => {
   };
 
   const handleElementAdd = (element) => {
-    setElements([...elements, element]);
+    const newElements = [...elements, element];
+    setElements(newElements);
+    saveOwnerElements(sessionId, newElements);
     socket.emit("elementAdded", element);
   };
 
@@ -296,14 +324,16 @@ const OwnerPage = () => {
       ...elements.find((el) => el.id === elementId),
       ...updates,
     };
-    setElements((prev) =>
-      prev.map((el) => (el.id === elementId ? updatedElement : el))
-    );
+    const newElements = elements.map((el) => (el.id === elementId ? updatedElement : el));
+    setElements(newElements);
+    saveOwnerElements(sessionId, newElements);
     socket.emit("elementUpdated", updatedElement);
   };
 
   const handleElementRemove = (elementId) => {
-    setElements((prev) => prev.filter((el) => el.id !== elementId));
+    const newElements = elements.filter((el) => el.id !== elementId);
+    setElements(newElements);
+    saveOwnerElements(sessionId, newElements);
     socket.emit("elementRemoved", elementId);
   };
 

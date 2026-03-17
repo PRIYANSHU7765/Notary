@@ -44,6 +44,22 @@ const saveNotaryUploadedAssets = (assets) => {
   localStorage.setItem(NOTARY_UPLOADED_ASSETS_KEY, JSON.stringify(assets));
 };
 
+const getNotaryElementsStorageKey = (sessionId) => `notary.elements.${sessionId}`;
+
+const loadNotaryElements = (sessionId) => {
+  if (!sessionId) return [];
+  try {
+    return JSON.parse(localStorage.getItem(getNotaryElementsStorageKey(sessionId)) || "[]");
+  } catch {
+    return [];
+  }
+};
+
+const saveNotaryElements = (sessionId, elements) => {
+  if (!sessionId) return;
+  localStorage.setItem(getNotaryElementsStorageKey(sessionId), JSON.stringify(elements));
+};
+
 const NotaryPage = ({ sessionId: passedSessionId }) => {
   const [elements, setElements] = useState([]);
   const [sessionId, setSessionId] = useState(passedSessionId || null);
@@ -198,7 +214,9 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   }, [sessionJoined, sessionId]);
 
   const handleElementAdd = (element) => {
-    setElements([...elements, element]);
+    const newElements = [...elements, element];
+    setElements(newElements);
+    saveNotaryElements(sessionId, newElements);
     socket.emit("elementAdded", element);
   };
 
@@ -207,14 +225,16 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       ...elements.find((el) => el.id === elementId),
       ...updates,
     };
-    setElements((prev) =>
-      prev.map((el) => (el.id === elementId ? updatedElement : el))
-    );
+    const newElements = elements.map((el) => (el.id === elementId ? updatedElement : el));
+    setElements(newElements);
+    saveNotaryElements(sessionId, newElements);
     socket.emit("elementUpdated", updatedElement);
   };
 
   const handleElementRemove = (elementId) => {
-    setElements((prev) => prev.filter((el) => el.id !== elementId));
+    const newElements = elements.filter((el) => el.id !== elementId);
+    setElements(newElements);
+    saveNotaryElements(sessionId, newElements);
     socket.emit("elementRemoved", elementId);
   };
 
@@ -273,6 +293,16 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       restoreUploadedAssets();
     }
   }, [sessionJoined]);
+
+  // Load notary elements from localStorage on session join
+  useEffect(() => {
+    if (sessionJoined && sessionId) {
+      const savedElements = loadNotaryElements(sessionId);
+      if (savedElements.length > 0) {
+        setElements(savedElements);
+      }
+    }
+  }, [sessionJoined, sessionId]);
 
   if (!sessionJoined) {
     return (

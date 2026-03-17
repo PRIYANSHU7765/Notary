@@ -17,10 +17,15 @@ const useKonvaImage = (src) => {
 };
 
 // Draggable Image Component
-const DraggableImageElement = ({ element, onChange, onSelect, isSelected }) => {
+const DraggableImageElement = ({ element, onChange, onSelect, isSelected, notaryAssetBoxes = [], currentUserRole = 'owner', onInvalidDrag }) => {
   const image = useKonvaImage(element.image);
   const imageRef = useRef(null);
   const transformerRef = useRef(null);
+  const originalPosRef = useRef({ x: element.x, y: element.y });
+
+  useEffect(() => {
+    originalPosRef.current = { x: element.x, y: element.y };
+  }, [element.id]);
 
   useEffect(() => {
     if (!isSelected || !transformerRef.current || !imageRef.current) return;
@@ -30,6 +35,40 @@ const DraggableImageElement = ({ element, onChange, onSelect, isSelected }) => {
   }, [isSelected, image]);
 
   if (!image) return null;
+
+  const handleDragEnd = (e) => {
+    const newX = e.target.x();
+    const newY = e.target.y();
+    const newW = element.width || 100;
+    const newH = element.height || 100;
+
+    // For owner, validate that the element stays inside a notary box
+    if (currentUserRole === "owner" && element.user === "owner") {
+      const isInsideBox = notaryAssetBoxes.some((box) => {
+        const boxX = Number(box.x) || 0;
+        const boxY = Number(box.y) || 0;
+        const boxW = Number(box.width) || 0;
+        const boxH = Number(box.height) || 0;
+
+        return (
+          newX >= boxX &&
+          newX + newW <= boxX + boxW &&
+          newY >= boxY &&
+          newY + newH <= boxY + boxH
+        );
+      });
+
+      if (!isInsideBox) {
+        onInvalidDrag?.("Place it in the box");
+        // Revert to original position
+        e.target.x(originalPosRef.current.x);
+        e.target.y(originalPosRef.current.y);
+        return;
+      }
+    }
+
+    onChange(element.id, { x: newX, y: newY });
+  };
 
   return (
     <>
@@ -43,7 +82,7 @@ const DraggableImageElement = ({ element, onChange, onSelect, isSelected }) => {
         draggable
         onClick={() => onSelect(element.id)}
         onTap={() => onSelect(element.id)}
-        onDragEnd={(e) => onChange(element.id, { x: e.target.x(), y: e.target.y() })}
+        onDragEnd={handleDragEnd}
         onTransformEnd={() => {
           const node = imageRef.current;
           if (!node) return;
@@ -105,10 +144,32 @@ const CanvasBoard = ({
 }) => {
   const stageRef = useRef(null);
   const [selectedId, setSelectedId] = useState(null);
+  const [toastMessage, setToastMessage] = useState("");
+  const toastTimerRef = useRef(null);
+
+  const showToast = (message) => {
+    setToastMessage(message);
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMessage("");
+      toastTimerRef.current = null;
+    }, 2200);
+  };
 
   const selectedElement = elements.find((el) => el.id === selectedId);
+  const notaryAssetBoxes = elements.filter((el) => el.type === "box" && el.user === "notary");
   // Notary can delete any asset; Owner can only delete their own
   const canDelete = !selectedElement || currentUserRole === 'notary' || selectedElement.user === currentUserRole;
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleElementChange = (id, updates) => {
     onElementUpdate(id, updates);
@@ -161,13 +222,67 @@ const CanvasBoard = ({
     const defaultWidth = Math.max(24, Number(data.width) || 100);
     const defaultHeight = Math.max(24, Number(data.height) || 100);
 
+    let nextX = safeX;
+    let nextY = safeY;
+    let nextWidth = defaultWidth;
+    let nextHeight = defaultHeight;
+
+    if (currentUserRole === "owner") {
+      if (notaryAssetBoxes.length === 0) {
+        showToast("Wait for notary to create asset box");
+        return;
+      }
+
+      const targetBox = notaryAssetBoxes.find((box) => {
+        const boxX = Number(box.x) || 0;
+        const boxY = Number(box.y) || 0;
+        const boxW = Number(box.width) || 0;
+        const boxH = Number(box.height) || 0;
+
+        return (
+          safeX >= boxX &&
+          safeX <= boxX + boxW &&
+          safeY >= boxY &&
+          safeY <= boxY + boxH
+        );
+      });
+
+      if (!targetBox) {
+        showToast("Place it in the box");
+        return;
+      }
+
+      // Fit owner asset completely inside the target notary box.
+      const boxX = Number(targetBox.x) || 0;
+      const boxY = Number(targetBox.y) || 0;
+      const boxW = Math.max(24, Number(targetBox.width) || 0);
+      const boxH = Math.max(24, Number(targetBox.height) || 0);
+      const boxPadding = Math.min(8, boxW * 0.08, boxH * 0.08);
+      const innerW = Math.max(24, boxW - boxPadding * 2);
+      const innerH = Math.max(24, boxH - boxPadding * 2);
+
+      const elementAspect = defaultWidth / defaultHeight;
+      const boxAspect = innerW / innerH;
+
+      if (elementAspect > boxAspect) {
+        nextWidth = innerW;
+        nextHeight = Math.max(24, innerW / elementAspect);
+      } else {
+        nextHeight = innerH;
+        nextWidth = Math.max(24, innerH * elementAspect);
+      }
+
+      nextX = boxX + (boxW - nextWidth) / 2;
+      nextY = boxY + (boxH - nextHeight) / 2;
+    }
+
     const newElement = {
       id: Date.now().toString(),
       image: data.image,
-      x: safeX,
-      y: safeY,
-      width: defaultWidth,
-      height: defaultHeight,
+      x: nextX,
+      y: nextY,
+      width: nextWidth,
+      height: nextHeight,
       type: data.type,
       user: data.user,
     };
@@ -224,6 +339,9 @@ const CanvasBoard = ({
               onChange={handleElementChange}
               onSelect={setSelectedId}
               isSelected={selectedId === element.id}
+              notaryAssetBoxes={notaryAssetBoxes}
+              currentUserRole={currentUserRole}
+              onInvalidDrag={showToast}
             />
           ))}
         </Layer>
@@ -274,6 +392,32 @@ const CanvasBoard = ({
           title="Only the user who added this asset can delete it"
         >
           ⚠️ Cannot delete (added by {selectedElement?.user})
+        </div>
+      )}
+
+      {toastMessage && (
+        <div
+          style={{
+            position: "fixed",
+            top: "18px",
+            right: "18px",
+            zIndex: 9999,
+            backgroundColor: "rgba(17, 24, 39, 0.95)",
+            color: "#fff",
+            padding: "14px 18px",
+            borderRadius: "12px",
+            fontSize: "14px",
+            fontWeight: "700",
+            pointerEvents: "none",
+            whiteSpace: "nowrap",
+            minWidth: "220px",
+            boxShadow: "0 12px 30px rgba(0,0,0,0.25)",
+            textAlign: "center",
+          }}
+          role="status"
+          aria-live="polite"
+        >
+          {toastMessage}
         </div>
       )}
 
