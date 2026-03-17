@@ -60,7 +60,7 @@ const createTextAssetImage = (text) => {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 };
 
-const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true, uploadedAsset, uploadedAssets = [] }) => {
+const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true, uploadedAsset, uploadedAssets = [], onAssetBoxClick }) => {
   const [showSignaturePad, setShowSignaturePad] = useState(false);
   const [showTextModal, setShowTextModal] = useState(false);
   const [textInput, setTextInput] = useState("");
@@ -298,6 +298,24 @@ const SidebarAssets = ({ userRole, onAssetGenerated, showAssets = true, uploaded
           >
             🅰️ Add Text
           </button>
+          {userRole === "notary" && (
+            <button
+              onClick={() => onAssetBoxClick?.()}
+              style={{
+                width: "100%",
+                padding: "10px",
+                marginBottom: "15px",
+                backgroundColor: "#7c3aed",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+                fontWeight: "bold",
+              }}
+            >
+              📦 Add Asset Box
+            </button>
+          )}
         </>
       )}
 

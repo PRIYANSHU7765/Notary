@@ -99,6 +99,8 @@ const CanvasBoard = ({
   canvasWidth = 800,
   canvasHeight = 600,
   overlayMode = false,
+  isAssetBoxMode = false,
+  onCreateAssetBox,
 }) => {
   const stageRef = useRef(null);
   const [selectedId, setSelectedId] = useState(null);
@@ -112,12 +114,15 @@ const CanvasBoard = ({
       onElementRemove(selectedId);
       setSelectedId(null);
     }
+    if (e.key === "Escape" && isAssetBoxMode) {
+      onCreateAssetBox?.(null);
+    }
   };
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedId]);
+  }, [selectedId, isAssetBoxMode]);
 
   // Handle dropping from sidebar
   const handleDrop = (e) => {
@@ -170,6 +175,18 @@ const CanvasBoard = ({
   };
 
   const handleStageClick = (e) => {
+    if (isAssetBoxMode) {
+      const stage = stageRef.current?.getStage();
+      if (!stage) return;
+
+      stage.setPointersPositions(e.nativeEvent);
+      const pointer = stage.getPointerPosition();
+      if (!pointer) return;
+
+      onCreateAssetBox?.(pointer.x, pointer.y);
+      return;
+    }
+
     // Deselect when clicking on empty stage area (not on elements)
     if (e.target === e.target.getStage()) {
       setSelectedId(null);
@@ -189,9 +206,10 @@ const CanvasBoard = ({
         justifyContent: "center",
         alignItems: "center",
         position: "relative",
+        cursor: isAssetBoxMode ? "crosshair" : "default",
       }}
     >
-      <Stage ref={stageRef} width={canvasWidth} height={canvasHeight} onClick={handleStageClick}>
+      <Stage ref={stageRef} width={canvasWidth} height={canvasHeight} onClick={handleStageClick} style={{ cursor: isAssetBoxMode ? "crosshair" : "default" }}>
         <Layer>
           {/* Render all elements */}
           {elements.map((element) => (

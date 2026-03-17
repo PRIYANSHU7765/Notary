@@ -55,6 +55,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   const [sessionStatus, setSessionStatus] = useState(null);
   const [uploadedAssets, setUploadedAssets] = useState(() => loadNotaryUploadedAssets());
   const [uploadedAsset, setUploadedAsset] = useState(null);
+  const [isAssetBoxMode, setIsAssetBoxMode] = useState(false);
   const editorScrollRef = useRef(null);
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
@@ -217,6 +218,26 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
     socket.emit("elementRemoved", elementId);
   };
 
+  const handleCreateAssetBox = (x, y, width = 120, height = 80) => {
+    const boxSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80"><rect x="2" y="2" width="116" height="76" fill="none" stroke="#666" stroke-width="2" rx="2"/></svg>`;
+    const boxImage = `data:image/svg+xml,${encodeURIComponent(boxSvg)}`;
+
+    const newElement = {
+      id: `box-${Date.now()}`,
+      image: boxImage,
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+      type: "box",
+      user: "notary",
+    };
+
+    setElements([...elements, newElement]);
+    socket.emit("elementAdded", newElement);
+    setIsAssetBoxMode(false);
+  };
+
   const handleAssetUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -329,7 +350,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   return (
     <div style={{ display: "flex", height: "100vh" }}>
       {/* Sidebar */}
-      <SidebarAssets userRole="notary" uploadedAsset={uploadedAsset} uploadedAssets={uploadedAssets} />
+      <SidebarAssets userRole="notary" uploadedAsset={uploadedAsset} uploadedAssets={uploadedAssets} onAssetBoxClick={() => setIsAssetBoxMode(true)} />
 
       {/* Main Content */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "15px", overflowY: "auto" }}>
@@ -451,6 +472,8 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
                     canvasHeight={EDITOR_HEIGHT}
                     overlayMode
                     showGuide={false}
+                    isAssetBoxMode={isAssetBoxMode}
+                    onCreateAssetBox={handleCreateAssetBox}
                   />
                 </div>
               </div>
