@@ -86,6 +86,11 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   // If session ID came from URL, treat it as already set
   useEffect(() => {
     if (initialSessionId && !sessionId) {
+      // Clear uploaded assets for a fresh document session when auto-joining from URL
+      setUploadedAssets([]);
+      setUploadedAsset(null);
+      localStorage.removeItem(NOTARY_UPLOADED_ASSETS_KEY);
+      
       setSessionId(initialSessionId);
     }
   }, []);
@@ -180,6 +185,11 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   const handleJoinSession = () => {
     const normalized = normalizeSessionId(inputSessionId);
     if (normalized) {
+      // Clear uploaded assets for a fresh document session
+      setUploadedAssets([]);
+      setUploadedAsset(null);
+      localStorage.removeItem(NOTARY_UPLOADED_ASSETS_KEY);
+      
       setSessionId(normalized);
       setInputSessionId(normalized);
       setSessionJoined(true);
