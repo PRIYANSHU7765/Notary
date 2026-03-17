@@ -166,6 +166,16 @@ const OwnerPage = () => {
     }
   }, [sessionId]);
 
+  // Cleanup: Notify when owner leaves the session
+  useEffect(() => {
+    return () => {
+      if (sessionId) {
+        socket.emit("ownerLeftSession", { sessionId });
+        localStorage.removeItem("notary.ownerSessionId");
+      }
+    };
+  }, [sessionId]);
+
   const handleCopyNotaryLink = () => {
     if (!sessionId) return;
     const url = `${window.location.origin}/notary?role=notary&sessionId=${sessionId}`;

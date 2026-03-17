@@ -149,6 +149,21 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         setDocumentInfo({ fileName: data.fileName });
       });
 
+      socket.on("ownerLeftSession", (data) => {
+        console.log("Owner left session:", data.sessionId);
+        if (data.sessionId === sessionId) {
+          // Owner left this session, clean up and redirect
+          setSessionJoined(false);
+          setSessionId(null);
+          setInputSessionId("");
+          setElements([]);
+          setPdfDataUrl(null);
+          setDocumentInfo(null);
+          setOwnerConnected(false);
+          setConnectedUsers([]);
+        }
+      });
+
       return () => {
         socket.off("elementAdded");
         socket.off("elementUpdated");
@@ -157,6 +172,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         socket.off("documentUploaded");
         socket.off("documentShared");
         socket.off("sessionStatus");
+        socket.off("ownerLeftSession");
       };
     }
   }, [sessionJoined, sessionId]);

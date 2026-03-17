@@ -13,6 +13,7 @@ const ACTIVE_SESSIONS_KEY = "notary.ownerActiveSessions";
 const DASHBOARD_STATE_KEY = "notary.ownerDashboardState";
 const UPLOADED_ASSETS_KEY = "notary.ownerUploadedAssets";
 const EDITOR_ELEMENTS_KEY = "notary.ownerEditorElements";
+const PREVIOUS_SESSIONS_KEY = "notary.ownerPreviousSessions";
 
 const loadUploadedAssets = () => {
   try {
@@ -44,6 +45,20 @@ const loadActiveSessions = () => {
   } catch {
     return {};
   }
+};
+
+const loadPreviousSessions = () => {
+  try {
+    return JSON.parse(localStorage.getItem(PREVIOUS_SESSIONS_KEY) || "{}");
+  } catch {
+    return {};
+  }
+};
+
+const addPreviousSession = (docId, sessionId) => {
+  const previous = loadPreviousSessions();
+  previous[docId] = sessionId;
+  localStorage.setItem(PREVIOUS_SESSIONS_KEY, JSON.stringify(previous));
 };
 
 const loadDashboardState = () => {
@@ -263,6 +278,7 @@ const OwnerDashboardPage = () => {
   const [notarizingDoc, setNotarizingDoc] = useState(null);
   const [sessionId, setSessionId] = useState("");
   const [activeSessions, setActiveSessions] = useState(loadActiveSessions);
+  const [previousSessions, setPreviousSessions] = useState(loadPreviousSessions);
   // Restore activeSessionDocId to maintain session state on page refresh
   const [activeSessionDocId, setActiveSessionDocId] = useState(restoredDashboardState.activeSessionDocId || null);
   const [notaries, setNotaries] = useState([]);
@@ -275,6 +291,7 @@ const OwnerDashboardPage = () => {
   const [uploadedAssets, setUploadedAssets] = useState(() => loadUploadedAssets());
   const [uploadedAsset, setUploadedAsset] = useState(null);
   const lastAutoSharedDocKeyRef = useRef("");
+  const currentSessionIdRef = useRef(null);
   const editorScrollRef = useRef(null);
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
@@ -287,6 +304,10 @@ const OwnerDashboardPage = () => {
   useEffect(() => {
     localStorage.setItem(ACTIVE_SESSIONS_KEY, JSON.stringify(activeSessions));
   }, [activeSessions]);
+
+  useEffect(() => {
+    localStorage.setItem(PREVIOUS_SESSIONS_KEY, JSON.stringify(previousSessions));
+  }, [previousSessions]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -325,7 +346,7 @@ const OwnerDashboardPage = () => {
   useEffect(() => {
     if (!sessionJoined || !activeSessionDocId || !uploadedFile || notaries.length === 0) return;
 
-    const sessionIdToShare = activeSessions[activeSessionDocId];
+    const sessionIdToShare = activeSessions[activeSessionDocId] || previousSessions[activeSessionDocId];
     if (!sessionIdToShare) return;
 
     const resolvedFileName = uploadedFileName || sessionDocName || "document.pdf";
@@ -342,6 +363,7 @@ const OwnerDashboardPage = () => {
     sessionJoined,
     activeSessionDocId,
     activeSessions,
+    previousSessions,
     uploadedFile,
     uploadedFileName,
     sessionDocName,
@@ -376,12 +398,27 @@ const OwnerDashboardPage = () => {
       });
     };
 
+    const onOwnerLeftSession = (data) => {
+      console.log('Owner left session:', data.sessionId);
+      setActiveSessions((prev) => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach((docId) => {
+          if (updated[docId] === data.sessionId) {
+            delete updated[docId];
+          }
+        });
+        return updated;
+      });
+    };
+
     socket.on('notarySessionStarted', onNotarySessionStarted);
     socket.on('notarySessionEnded', onNotarySessionEnded);
+    socket.on('ownerLeftSession', onOwnerLeftSession);
 
     return () => {
       socket.off('notarySessionStarted', onNotarySessionStarted);
       socket.off('notarySessionEnded', onNotarySessionEnded);
+      socket.off('ownerLeftSession', onOwnerLeftSession);
     };
   }, []);
 
@@ -401,8 +438,11 @@ const OwnerDashboardPage = () => {
   useEffect(() => {
     if (!activeSessionDocId) return;
 
-    const sessionIdToJoin = activeSessions[activeSessionDocId];
+    const sessionIdToJoin = activeSessions[activeSessionDocId] || previousSessions[activeSessionDocId];
     if (!sessionIdToJoin) return;
+
+    // Store the current session ID for later use in handleExitSession
+    currentSessionIdRef.current = sessionIdToJoin;
 
     const authUser = (() => {
       try {
@@ -463,12 +503,37 @@ const OwnerDashboardPage = () => {
       socket.off("elementUpdated", onElementUpdated);
       socket.off("elementRemoved", onElementRemoved);
     };
-  }, [activeSessionDocId, activeSessions]);
+  }, [activeSessionDocId, activeSessions, previousSessions]);
+
+  // Cleanup effect: Emit ownerLeftSession when exiting a session
+  useEffect(() => {
+    return () => {
+      // When component unmounts or session is cleared, notify notary
+      if (currentSessionIdRef.current && sessionJoined) {
+        socket.emit("ownerLeftSession", { sessionId: currentSessionIdRef.current });
+        console.log("Cleanup: Emitted ownerLeftSession:", currentSessionIdRef.current);
+      }
+    };
+  }, [sessionJoined]);
 
   const handleJoinSession = (doc) => {
-    const sessionIdVal = activeSessions[doc.id];
+    // Try to get sessionId from active sessions first, then from previous sessions
+    const sessionIdVal = activeSessions[doc.id] || previousSessions[doc.id];
     if (sessionIdVal) {
       setActiveSessionDocId(doc.id);
+      addPreviousSession(doc.id, sessionIdVal);
+      setPreviousSessions((prev) => ({ ...prev, [doc.id]: sessionIdVal }));
+      
+      // Pre-load the document
+      if (doc?.dataUrl) {
+        setUploadedFile(doc.dataUrl);
+        setUploadedFileName(doc.name || "document.pdf");
+        // Share document with notary via socket
+        socket.emit("documentShared", { pdfDataUrl: doc.dataUrl, fileName: doc.name || "document.pdf" });
+      }
+      
+      // Immediately show the editor view
+      setSessionJoined(true);
     }
   };
 
@@ -482,7 +547,7 @@ const OwnerDashboardPage = () => {
       setUploadedFile(doc.dataUrl);
       setUploadedFileName(doc.name || "document.pdf");
       // Share document with notary via socket
-      const sessionIdVal = activeSessions[activeSessionDocId];
+      const sessionIdVal = activeSessions[activeSessionDocId] || previousSessions[activeSessionDocId];
       if (sessionIdVal) {
         socket.emit("documentShared", { pdfDataUrl: doc.dataUrl, fileName: doc.name || "document.pdf" });
       }
@@ -513,7 +578,7 @@ const OwnerDashboardPage = () => {
 
   const handleEditorElementAdd = (element) => {
     setEditorElements((prev) => [...prev, element]);
-    const sessionIdVal = activeSessions[activeSessionDocId];
+    const sessionIdVal = activeSessions[activeSessionDocId] || previousSessions[activeSessionDocId];
     if (sessionIdVal) socket.emit("elementAdded", element);
   };
 
@@ -523,17 +588,25 @@ const OwnerDashboardPage = () => {
       ...updates,
     };
     setEditorElements((prev) => prev.map((el) => (el.id === elementId ? updatedElement : el)));
-    const sessionIdVal = activeSessions[activeSessionDocId];
+    const sessionIdVal = activeSessions[activeSessionDocId] || previousSessions[activeSessionDocId];
     if (sessionIdVal) socket.emit("elementUpdated", updatedElement);
   };
 
   const handleEditorElementRemove = (elementId) => {
     setEditorElements((prev) => prev.filter((el) => el.id !== elementId));
-    const sessionIdVal = activeSessions[activeSessionDocId];
+    const sessionIdVal = activeSessions[activeSessionDocId] || previousSessions[activeSessionDocId];
     if (sessionIdVal) socket.emit("elementRemoved", elementId);
   };
 
   const handleExitSession = () => {
+    // Notify notary that owner is leaving the session using the stored ref
+    const sessionIdToLeave = currentSessionIdRef.current;
+    if (sessionIdToLeave) {
+      socket.emit("ownerLeftSession", { sessionId: sessionIdToLeave });
+      console.log("Emitted ownerLeftSession:", sessionIdToLeave);
+    }
+    currentSessionIdRef.current = null;
+
     setActiveSessionDocId(null);
     setNotaries([]);
     setSessionDocName("");
@@ -1201,6 +1274,8 @@ const OwnerDashboardPage = () => {
             {docs.map((doc, idx) => {
               const statusStyle = STATUS_COLORS[doc.status] || STATUS_COLORS["Pending"];
               const hasActiveSession = activeSessions[doc.id];
+              const hasPreviousSession = previousSessions[doc.id];
+              const showButton = hasActiveSession || hasPreviousSession;
               return (
                 <div
                   key={doc.id}
@@ -1292,7 +1367,7 @@ const OwnerDashboardPage = () => {
                   <span style={{ fontSize: "12px", color: "#999" }}>{formatDate(doc.uploadedAt)}</span>
 
                   {/* Session Button */}
-                  {hasActiveSession ? (
+                  {showButton ? (
                     <button
                       onClick={() => handleJoinSession(doc)}
                       style={{
@@ -1309,7 +1384,7 @@ const OwnerDashboardPage = () => {
                       onMouseEnter={(e) => (e.currentTarget.style.background = "#059669")}
                       onMouseLeave={(e) => (e.currentTarget.style.background = "#10b981")}
                     >
-                      Join the session
+                      {previousSessions[doc.id] ? "Continue session" : "Join Session"}
                     </button>
                   ) : (
                     <span style={{ fontSize: "12px", color: "#ccc" }}>-</span>
