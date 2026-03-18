@@ -621,17 +621,31 @@ app.post('/api/signatures', (req, res) => {
     }
 
     const nowMs = now();
-    insertOrUpdateSignature.run({
-      id,
-      sessionId,
-      userId: userId || null,
-      username: username || null,
-      name: name || 'Unnamed Signature',
-      image,
-      userRole,
-      createdAt: nowMs,
-      updatedAt: nowMs,
-    });
+    dbRun(
+      `
+      INSERT INTO signatures (id, sessionId, userId, username, name, image, userRole, createdAt, updatedAt)
+      VALUES (:id, :sessionId, :userId, :username, :name, :image, :userRole, :createdAt, :updatedAt)
+      ON CONFLICT(id) DO UPDATE SET
+        sessionId = excluded.sessionId,
+        userId = excluded.userId,
+        username = excluded.username,
+        name = excluded.name,
+        image = excluded.image,
+        userRole = excluded.userRole,
+        updatedAt = excluded.updatedAt
+    `,
+      {
+        id,
+        sessionId,
+        userId: userId || null,
+        username: username || null,
+        name: name || 'Unnamed Signature',
+        image,
+        userRole,
+        createdAt: nowMs,
+        updatedAt: nowMs,
+      }
+    );
     persistDatabase();
 
     const saved = dbGet('SELECT * FROM signatures WHERE id = :id', { id });
@@ -646,13 +660,13 @@ app.post('/api/signatures', (req, res) => {
 app.delete('/api/signatures/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const result = deleteSignatureById.run({ id });
-    persistDatabase();
-
-    // sql.js doesn't always expose `changes` in the same way; check for errors instead
-    if (!result || typeof result.changes === 'undefined' || result.changes === 0) {
+    const existing = dbGet('SELECT * FROM signatures WHERE id = :id', { id });
+    if (!existing) {
       return res.status(404).json({ error: 'Signature not found' });
     }
+
+    dbRun('DELETE FROM signatures WHERE id = :id', { id });
+    persistDatabase();
 
     res.json({ message: 'Signature deleted' });
   } catch (error) {
@@ -688,22 +702,42 @@ app.post('/api/documents', (req, res) => {
     const nowMs = now();
     const uploadedMs = uploadedAt ? new Date(uploadedAt).getTime() : nowMs;
 
-    insertOrUpdateDocument.run({
-      id,
-      sessionId,
-      ownerId: ownerId || null,
-      ownerName: safeOwnerName,
-      notaryId: notaryId || null,
-      notaryName: notaryName || null,
-      name,
-      size: Number(size) || 0,
-      type: type || 'application/octet-stream',
-      uploadedAt: uploadedMs,
-      notarized: notarized ? 1 : 0,
-      notarizedAt: notarized ? nowMs : null,
-      notaryReview: notarized ? 'pending' : null,
-      notaryReviewedAt: null,
-    });
+    dbRun(
+      `
+      INSERT INTO documents (id, sessionId, ownerId, ownerName, notaryId, notaryName, name, size, type, uploadedAt, notarized, notarizedAt, notaryReview, notaryReviewedAt)
+      VALUES (:id, :sessionId, :ownerId, :ownerName, :notaryId, :notaryName, :name, :size, :type, :uploadedAt, :notarized, :notarizedAt, :notaryReview, :notaryReviewedAt)
+      ON CONFLICT(id) DO UPDATE SET
+        sessionId = excluded.sessionId,
+        ownerId = excluded.ownerId,
+        ownerName = excluded.ownerName,
+        notaryId = excluded.notaryId,
+        notaryName = excluded.notaryName,
+        name = excluded.name,
+        size = excluded.size,
+        type = excluded.type,
+        uploadedAt = excluded.uploadedAt,
+        notarized = excluded.notarized,
+        notarizedAt = excluded.notarizedAt,
+        notaryReview = excluded.notaryReview,
+        notaryReviewedAt = excluded.notaryReviewedAt
+    `,
+      {
+        id,
+        sessionId,
+        ownerId: ownerId || null,
+        ownerName: safeOwnerName,
+        notaryId: notaryId || null,
+        notaryName: notaryName || null,
+        name,
+        size: Number(size) || 0,
+        type: type || 'application/octet-stream',
+        uploadedAt: uploadedMs,
+        notarized: notarized ? 1 : 0,
+        notarizedAt: notarized ? nowMs : null,
+        notaryReview: notarized ? 'pending' : null,
+        notaryReviewedAt: null,
+      }
+    );
     persistDatabase();
 
     const document = dbGet('SELECT * FROM documents WHERE id = :id', { id });

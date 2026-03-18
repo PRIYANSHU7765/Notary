@@ -863,7 +863,7 @@ const OwnerDashboardPage = () => {
     saveDocs(updated);
   };
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -876,7 +876,7 @@ const OwnerDashboardPage = () => {
     })();
 
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       const currentSessionId = sessionId || `notary-session-${Date.now()}`;
       const newDoc = {
         id: `doc-${Date.now()}`,
@@ -893,6 +893,25 @@ const OwnerDashboardPage = () => {
       const updated = [newDoc, ...docs];
       setDocs(updated);
       saveDocs(updated);
+
+      // Persist uploaded document to backend immediately.
+      try {
+        await saveDocument({
+          id: newDoc.id,
+          sessionId: newDoc.sessionId,
+          ownerId: authUser.userId,
+          ownerName: newDoc.ownerName,
+          name: newDoc.name,
+          size: newDoc.size,
+          type: newDoc.type,
+          uploadedAt: newDoc.uploadedAt,
+          notarized: false,
+        });
+        console.log('✅ [OWNER] Uploaded document saved to backend:', newDoc.name);
+      } catch (error) {
+        console.warn('⚠️ [OWNER] Failed to save uploaded document to backend:', error);
+      }
+
       if (currentSessionId && currentSessionId.startsWith('notary-session-')) {
         localStorage.setItem('notary.ownerSessionId', currentSessionId);
       }
