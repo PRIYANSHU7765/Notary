@@ -24,7 +24,13 @@ const app = express();
 const server = http.createServer(app);
 
 // Environment variables
-const PORT = process.env.PORT || 5000;
+const parsePort = (value, fallback) => {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) return fallback;
+  return port;
+};
+
+const PORT = parsePort(process.env.PORT, 5000);
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
@@ -466,7 +472,10 @@ app.post('/api/auth/register', (req, res) => {
     persistDatabase();
 
     const token = createToken({ username, userId, role });
-    return res.json({ userId, username, email, role, token });
+    return res.json({
+      user: { userId, username, email, role },
+      token,
+    });
   } catch (error) {
     console.error('Error registering user:', error);
     res.status(500).json({ error: 'Failed to register user' });
@@ -495,7 +504,15 @@ app.post('/api/auth/login', (req, res) => {
     }
 
     const token = createToken({ username: user.username, userId: user.userId, role: user.role });
-    return res.json({ userId: user.userId, username: user.username, role: user.role, token });
+    return res.json({
+      user: {
+        userId: user.userId,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+      },
+      token,
+    });
   } catch (error) {
     console.error('Error logging in user:', error);
     res.status(500).json({ error: 'Failed to login user' });
