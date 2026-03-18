@@ -1,5 +1,7 @@
 {
-  "buildCommand": "cd my-react-app && npm install && npm run build",
-  "outputDirectory": "my-react-app/dist",
-  "framework": "vite"
+  "buildCommand": "npm install",
+  "env": {
+    "NODE_ENV": "production",
+    "PORT": "5001"
+  }
 }
