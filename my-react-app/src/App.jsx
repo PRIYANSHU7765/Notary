@@ -2,6 +2,7 @@ import React, { Component } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import OwnerPage from './pages/OwnerPage'
 import OwnerDashboardPage from './pages/OwnerDashboardPage'
+import OwnerDocumentViewPage from './pages/OwnerDocumentViewPage'
 import OwnerSessionPage from './pages/OwnerSessionPage'
 import NotaryPage from './pages/NotaryPage'
 import NotaryDocDashboardPage from './pages/NotaryDocDashboardPage'
@@ -140,6 +141,16 @@ function App() {
               <RequireAuth>
                 <RequireRole allowedRoles={['owner']}>
                   <OwnerDashboardPage />
+                </RequireRole>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/owner/doc/view/:docId"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={['owner']}>
+                  <OwnerDocumentViewPage />
                 </RequireRole>
               </RequireAuth>
             }

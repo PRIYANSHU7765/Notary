@@ -1080,8 +1080,8 @@ const OwnerDashboardPage = () => {
   };
 
   const handleView = (doc) => {
-    localStorage.setItem("notary.viewDoc", JSON.stringify({ id: doc.id, name: doc.name, dataUrl: doc.dataUrl }));
-    navigate(`/owner?docId=${doc.id}`);
+    // Navigate to the document detail view which shows the document, notarization status, session info, and notary details.
+    navigate(`/owner/doc/view/${encodeURIComponent(doc.id)}`);
   };
 
   const handleNotarize = (doc) => {
