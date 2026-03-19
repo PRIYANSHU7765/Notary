@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { fetchAdminOverview } from "../utils/apiClient";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { deleteAdminUser, fetchAdminOverview, fetchAdminUserInfo, terminateAdminSession, updateAdminUser } from "../utils/apiClient";
 import "./AdminPage.css";
 
 const AdminPage = () => {
@@ -12,6 +12,20 @@ const AdminPage = () => {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [activityFilter, setActivityFilter] = useState("all");
+  const [actionMessage, setActionMessage] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [busyUserId, setBusyUserId] = useState("");
+  const [busySessionId, setBusySessionId] = useState("");
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [editUserForm, setEditUserForm] = useState({ username: "", email: "", role: "owner", password: "" });
+
+  const authUser = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("notary.authUser") || "null") || {};
+    } catch {
+      return {};
+    }
+  })();
 
   const formatDate = (value) => {
     if (!value) return "-";
@@ -34,34 +48,151 @@ const AdminPage = () => {
     return "";
   };
 
+  const loadOverview = useCallback(async () => {
+    try {
+      const overview = await fetchAdminOverview();
+      setSummary(overview.summary || null);
+      setUsers(Array.isArray(overview.users) ? overview.users : []);
+      setDocuments(Array.isArray(overview.recentDocuments) ? overview.recentDocuments : []);
+      setActiveSessions(Array.isArray(overview.activeSessions) ? overview.activeSessions : []);
+      setError("");
+    } catch (err) {
+      setError("Failed to load admin dashboard data");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
-    const loadOverview = async () => {
-      try {
-        const overview = await fetchAdminOverview();
-        if (cancelled) return;
-        setSummary(overview.summary || null);
-        setUsers(Array.isArray(overview.users) ? overview.users : []);
-        setDocuments(Array.isArray(overview.recentDocuments) ? overview.recentDocuments : []);
-        setActiveSessions(Array.isArray(overview.activeSessions) ? overview.activeSessions : []);
-      } catch (err) {
-        if (cancelled) return;
-        setError("Failed to load admin dashboard data");
-        console.error(err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+    const guardedLoad = async () => {
+      await loadOverview();
+      if (cancelled) return;
     };
 
-    loadOverview();
+    guardedLoad();
 
-    const refreshId = window.setInterval(loadOverview, 5000);
+    const refreshId = window.setInterval(guardedLoad, 5000);
     return () => {
       cancelled = true;
       window.clearInterval(refreshId);
     };
-  }, []);
+  }, [loadOverview]);
+
+  const clearFlashAfterDelay = () => {
+    window.setTimeout(() => {
+      setActionMessage("");
+      setActionError("");
+    }, 3500);
+  };
+
+  const handleViewUser = async (userId) => {
+    try {
+      setBusyUserId(userId);
+      setActionError("");
+      const payload = await fetchAdminUserInfo(userId);
+      setSelectedUser({ mode: "view", data: payload });
+    } catch (err) {
+      setActionError(err?.message || "Failed to load user details");
+      clearFlashAfterDelay();
+    } finally {
+      setBusyUserId("");
+    }
+  };
+
+  const handleEditUser = async (userId) => {
+    try {
+      setBusyUserId(userId);
+      setActionError("");
+      const payload = await fetchAdminUserInfo(userId);
+      setSelectedUser({ mode: "edit", data: payload });
+      setEditUserForm({
+        username: payload?.user?.username || "",
+        email: payload?.user?.email || "",
+        role: payload?.user?.role || "owner",
+        password: "",
+      });
+    } catch (err) {
+      setActionError(err?.message || "Failed to load user for edit");
+      clearFlashAfterDelay();
+    } finally {
+      setBusyUserId("");
+    }
+  };
+
+  const handleSaveUser = async () => {
+    const userId = selectedUser?.data?.user?.userId;
+    if (!userId) return;
+
+    try {
+      setBusyUserId(userId);
+      setActionError("");
+      setActionMessage("");
+
+      await updateAdminUser(userId, {
+        username: editUserForm.username,
+        email: editUserForm.email,
+        role: editUserForm.role,
+        password: editUserForm.password || undefined,
+      });
+
+      setActionMessage("User updated successfully");
+      setSelectedUser(null);
+      await loadOverview();
+      clearFlashAfterDelay();
+    } catch (err) {
+      setActionError(err?.message || "Failed to update user");
+      clearFlashAfterDelay();
+    } finally {
+      setBusyUserId("");
+    }
+  };
+
+  const handleDeleteUser = async (user) => {
+    const shouldDelete = window.confirm(`Delete user ${user.username}? This action cannot be undone.`);
+    if (!shouldDelete) return;
+
+    try {
+      setBusyUserId(user.userId);
+      setActionError("");
+      setActionMessage("");
+      await deleteAdminUser(user.userId);
+      setActionMessage(`User ${user.username} deleted`);
+      await loadOverview();
+      clearFlashAfterDelay();
+    } catch (err) {
+      setActionError(err?.message || "Failed to delete user");
+      clearFlashAfterDelay();
+    } finally {
+      setBusyUserId("");
+    }
+  };
+
+  const handleTerminateSession = async (session) => {
+    const shouldTerminate = window.confirm(`Terminate live session ${session.sessionId}?`);
+    if (!shouldTerminate) return;
+
+    try {
+      setBusySessionId(session.sessionId);
+      setActionError("");
+      setActionMessage("");
+      await terminateAdminSession(session.sessionId, {
+        adminUserId: authUser?.userId || null,
+        adminName: authUser?.username || "Admin",
+        reason: "Terminated by admin from dashboard",
+      });
+      setActionMessage(`Session ${session.sessionId} terminated`);
+      await loadOverview();
+      clearFlashAfterDelay();
+    } catch (err) {
+      setActionError(err?.message || "Failed to terminate session");
+      clearFlashAfterDelay();
+    } finally {
+      setBusySessionId("");
+    }
+  };
 
   const filteredUsers = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -96,6 +227,8 @@ const AdminPage = () => {
         <p className="admin-subtitle">Monitor owners, notaries, activity status, and notarization work in one place.</p>
 
         {error && <p className="admin-error">{error}</p>}
+        {actionError && <p className="admin-error">{actionError}</p>}
+        {actionMessage && <p className="admin-success">{actionMessage}</p>}
 
         {loading ? (
           <p className="admin-loading">Loading admin dashboard...</p>
@@ -169,6 +302,7 @@ const AdminPage = () => {
                     <th>Work</th>
                     <th>Last Activity</th>
                     <th>Created</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -214,6 +348,32 @@ const AdminPage = () => {
                       </td>
                       <td>{formatDate(user.lastActivityAt)}</td>
                       <td>{formatDate(user.createdAt)}</td>
+                      <td>
+                        <div className="admin-actions-cell">
+                          <button
+                            className="admin-action-btn"
+                            onClick={() => handleViewUser(user.userId)}
+                            disabled={busyUserId === user.userId}
+                          >
+                            Info
+                          </button>
+                          <button
+                            className="admin-action-btn"
+                            onClick={() => handleEditUser(user.userId)}
+                            disabled={busyUserId === user.userId}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="admin-action-btn danger"
+                            onClick={() => handleDeleteUser(user)}
+                            disabled={busyUserId === user.userId || String(user.role || "").toLowerCase() === "admin"}
+                            title={String(user.role || "").toLowerCase() === "admin" ? "Admin accounts cannot be deleted here" : "Delete user"}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -229,12 +389,13 @@ const AdminPage = () => {
                     <th>Users</th>
                     <th>Participants</th>
                     <th>Created</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {activeSessions.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="admin-empty">No live sessions right now.</td>
+                      <td colSpan={5} className="admin-empty">No live sessions right now.</td>
                     </tr>
                   ) : (
                     activeSessions.map((session) => (
@@ -245,6 +406,15 @@ const AdminPage = () => {
                           {(session.users || []).map((u) => `${u.username} (${u.role})`).join(', ') || '-'}
                         </td>
                         <td>{formatDate(session.createdAt)}</td>
+                        <td>
+                          <button
+                            className="admin-action-btn danger"
+                            onClick={() => handleTerminateSession(session)}
+                            disabled={busySessionId === session.sessionId}
+                          >
+                            {busySessionId === session.sessionId ? "Terminating..." : "Terminate"}
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -285,6 +455,79 @@ const AdminPage = () => {
                 </tbody>
               </table>
             </div>
+
+            {selectedUser?.data?.user && (
+              <div className="admin-user-modal-overlay" onClick={() => setSelectedUser(null)}>
+                <div className="admin-user-modal" onClick={(e) => e.stopPropagation()}>
+                  <h3>{selectedUser.mode === "edit" ? "Edit User" : "User Details"}</h3>
+
+                  {selectedUser.mode === "edit" ? (
+                    <div className="admin-user-form">
+                      <label>
+                        Username
+                        <input
+                          value={editUserForm.username}
+                          onChange={(e) => setEditUserForm((prev) => ({ ...prev, username: e.target.value }))}
+                        />
+                      </label>
+                      <label>
+                        Email
+                        <input
+                          value={editUserForm.email}
+                          onChange={(e) => setEditUserForm((prev) => ({ ...prev, email: e.target.value }))}
+                        />
+                      </label>
+                      <label>
+                        Role
+                        <select
+                          value={editUserForm.role}
+                          onChange={(e) => setEditUserForm((prev) => ({ ...prev, role: e.target.value }))}
+                        >
+                          <option value="owner">Owner</option>
+                          <option value="notary">Notary</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                      </label>
+                      <label>
+                        Reset Password (optional)
+                        <input
+                          type="password"
+                          value={editUserForm.password}
+                          onChange={(e) => setEditUserForm((prev) => ({ ...prev, password: e.target.value }))}
+                          placeholder="Leave blank to keep current"
+                        />
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="admin-user-info-list">
+                      <p><strong>Username:</strong> {selectedUser.data.user.username}</p>
+                      <p><strong>Email:</strong> {selectedUser.data.user.email}</p>
+                      <p><strong>Role:</strong> {roleLabel(selectedUser.data.user.role)}</p>
+                      <p><strong>User ID:</strong> {selectedUser.data.user.userId}</p>
+                      <p><strong>Created:</strong> {formatDate(selectedUser.data.user.createdAt)}</p>
+                      <p><strong>Total Documents:</strong> {selectedUser.data.work?.totalDocuments || 0}</p>
+                      <p><strong>Owned Documents:</strong> {selectedUser.data.work?.ownedDocuments || 0}</p>
+                      <p><strong>Reviewed Documents:</strong> {selectedUser.data.work?.reviewedDocuments || 0}</p>
+                    </div>
+                  )}
+
+                  <div className="admin-user-modal-actions">
+                    <button className="admin-action-btn" onClick={() => setSelectedUser(null)}>
+                      Close
+                    </button>
+                    {selectedUser.mode === "edit" && (
+                      <button
+                        className="admin-action-btn primary"
+                        onClick={handleSaveUser}
+                        disabled={busyUserId === selectedUser.data.user.userId}
+                      >
+                        {busyUserId === selectedUser.data.user.userId ? "Saving..." : "Save Changes"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

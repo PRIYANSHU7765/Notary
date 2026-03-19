@@ -37,6 +37,7 @@ const NotaryDocDashboardPage = () => {
   const navigate = useNavigate()
   const [docs, setDocs] = useState([])
   const [loading, setLoading] = useState(true)
+  const [adminTerminationByDoc, setAdminTerminationByDoc] = useState({})
 
   const authUser = (() => {
     try {
@@ -144,16 +145,40 @@ const NotaryDocDashboardPage = () => {
       setDocs((prevDocs) => prevDocs.filter((d) => d.id !== documentId))
     }
 
+    const onAdminSessionTerminated = (payload) => {
+      const documentId = payload?.documentId
+      if (!documentId) return
+
+      setAdminTerminationByDoc((prev) => ({
+        ...prev,
+        [documentId]: payload?.message || 'Admin terminated this session.',
+      }))
+
+      setDocs((prevDocs) =>
+        prevDocs.map((doc) =>
+          doc.id === documentId
+            ? {
+                ...doc,
+                status: doc.status === 'notarized' ? 'notarized' : 'accepted',
+                notaryReview: doc.notaryReview === 'rejected' ? 'accepted' : (doc.notaryReview || 'accepted'),
+              }
+            : doc
+        )
+      )
+    }
+
     socket.on('documentNotarized', onDocumentNotarized)
     socket.on('documentNotarizationCancelled', onDocumentNotarizationCancelled)
     socket.on('documentReviewUpdated', onDocumentReviewUpdated)
     socket.on('documentDeleted', onDocumentDeleted)
+    socket.on('adminSessionTerminated', onAdminSessionTerminated)
 
     return () => {
       socket.off('documentNotarized', onDocumentNotarized)
       socket.off('documentNotarizationCancelled', onDocumentNotarizationCancelled)
       socket.off('documentReviewUpdated', onDocumentReviewUpdated)
       socket.off('documentDeleted', onDocumentDeleted)
+      socket.off('adminSessionTerminated', onAdminSessionTerminated)
     }
   }, [])
 
@@ -312,6 +337,11 @@ const NotaryDocDashboardPage = () => {
                   >
                     {reviewStatus}
                   </span>
+                  {adminTerminationByDoc[doc.id] ? (
+                    <div style={{ marginTop: '4px', fontSize: '11px', color: '#be123c', fontWeight: 600 }}>
+                      {adminTerminationByDoc[doc.id]}
+                    </div>
+                  ) : null}
                   
                   <span style={{ color: '#475569', fontSize: '12px', fontFamily: 'monospace' }}>
                     {doc.sessionId ? doc.sessionId.substring(0, 20) + '...' : '-'}

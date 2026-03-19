@@ -45,16 +45,25 @@ const OwnerSessionPage = () => {
       setSessionDoc(data.fileName || "");
     };
 
+    const onAdminSessionTerminated = (data) => {
+      if (!data?.sessionId || data.sessionId !== id) return;
+      alert(data?.message || "Admin terminated this session.");
+      setNotaries([]);
+      navigate("/owner/doc/dashboard", { replace: true });
+    };
+
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
     socket.on("usersConnected", onUsersConnected);
     socket.on("documentShared", onDocumentShared);
+    socket.on("adminSessionTerminated", onAdminSessionTerminated);
 
     return () => {
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
       socket.off("usersConnected", onUsersConnected);
       socket.off("documentShared", onDocumentShared);
+      socket.off("adminSessionTerminated", onAdminSessionTerminated);
     };
   }, []);
 

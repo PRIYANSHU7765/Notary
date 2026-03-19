@@ -191,6 +191,35 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         }
       };
 
+      const onAdminSessionTerminated = (data) => {
+        if (!data?.sessionId || data.sessionId !== sessionId) return;
+
+        showToast(data.message || "Admin terminated this session", "error", 4600);
+
+        setSessionJoined(false);
+        setSessionId(null);
+        setInputSessionId("");
+        setElements([]);
+        setUploadedAssets([]);
+        setUploadedAsset(null);
+        setPdfDataUrl(null);
+        setDocumentInfo(null);
+        setOwnerConnected(false);
+        setConnectedUsers([]);
+        setDocumentId(null);
+
+        localStorage.removeItem("notary.lastSessionId");
+        const params = new URLSearchParams(window.location.search);
+        params.delete("sessionId");
+        params.delete("role");
+        params.delete("documentId");
+        window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+
+        window.setTimeout(() => {
+          navigate("/notary/doc/dashboard");
+        }, 200);
+      };
+
       // Register listeners BEFORE joining to avoid missing initial presence events.
       socket.on("elementAdded", onElementAdded);
       socket.on("elementUpdated", onElementUpdated);
@@ -200,6 +229,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       socket.on("documentUploaded", onDocumentUploaded);
       socket.on("documentShared", onDocumentShared);
       socket.on("ownerLeftSession", onOwnerLeftSession);
+      socket.on("adminSessionTerminated", onAdminSessionTerminated);
 
       console.log('📡 [NOTARY] Joining session:', {roomId: sessionId, role: 'notary', userId: authUser.userId});
       socket.emit("joinSession", {
@@ -268,6 +298,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         socket.off("documentShared", onDocumentShared);
         socket.off("sessionStatus", onSessionStatus);
         socket.off("ownerLeftSession", onOwnerLeftSession);
+        socket.off("adminSessionTerminated", onAdminSessionTerminated);
       };
     }
   }, [sessionJoined, sessionId]);

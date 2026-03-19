@@ -39,6 +39,33 @@ async function fetchWithFallback(path, options = {}) {
   throw networkError || new Error('Unable to connect to backend server');
 }
 
+async function fetchWithNotFoundFallback(path, options = {}) {
+  let networkError = null;
+  let lastNotFoundResponse = null;
+
+  for (const baseUrl of getBaseUrlPriority()) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, options);
+
+      if (response.status === 404) {
+        lastNotFoundResponse = response;
+        continue;
+      }
+
+      lastWorkingApiBaseUrl = baseUrl;
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(API_BASE_STORAGE_KEY, baseUrl);
+      }
+      return response;
+    } catch (error) {
+      networkError = error;
+    }
+  }
+
+  if (lastNotFoundResponse) return lastNotFoundResponse;
+  throw networkError || new Error('Unable to connect to backend server');
+}
+
 const API_BASE_URL = configuredApiBaseUrl || (isDev ? 'http://localhost:5001' : '');
 
 console.log('[API Client] Base URL:', API_BASE_URL);
@@ -102,6 +129,64 @@ async function fetchAdminOverview() {
   }
 
   return payload;
+}
+
+async function fetchAdminUserInfo(userId) {
+  const response = await fetchWithNotFoundFallback(`/api/admin/users/${encodeURIComponent(userId)}`);
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(payload.error || 'Failed to fetch user details');
+  }
+
+  return payload;
+}
+
+async function updateAdminUser(userId, userData) {
+  const response = await fetchWithNotFoundFallback(`/api/admin/users/${encodeURIComponent(userId)}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(userData),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Failed to update user');
+  }
+
+  return payload;
+}
+
+async function deleteAdminUser(userId) {
+  const response = await fetchWithNotFoundFallback(`/api/admin/users/${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Failed to delete user');
+  }
+
+  return payload;
+}
+
+async function terminateAdminSession(sessionId, payload = {}) {
+  const response = await fetchWithNotFoundFallback(`/api/admin/sessions/${encodeURIComponent(sessionId)}/terminate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to terminate session');
+  }
+
+  return result;
 }
 
 async function saveSignature(signatureData) {
@@ -546,5 +631,5 @@ async function endOwnerDocumentSession(documentId, sessionId, notaryName, notary
     throw error;
   }
 }
-export { saveSignature, fetchSignatures, deleteSignature, saveAsset, fetchAssets, deleteAsset, registerUser, loginUser, fetchUsers, fetchAdminOverview, saveDocument, saveOwnerDocument, fetchDocuments, fetchOwnerDocuments, fetchNotarizedDocuments, updateDocumentReview, updateOwnerDocumentReview, deleteOwnerDocument, markOwnerDocumentSessionStarted, completeOwnerDocumentNotarization, endOwnerDocumentSession, API_BASE_URL };
+export { saveSignature, fetchSignatures, deleteSignature, saveAsset, fetchAssets, deleteAsset, registerUser, loginUser, fetchUsers, fetchAdminOverview, fetchAdminUserInfo, updateAdminUser, deleteAdminUser, terminateAdminSession, saveDocument, saveOwnerDocument, fetchDocuments, fetchOwnerDocuments, fetchNotarizedDocuments, updateDocumentReview, updateOwnerDocumentReview, deleteOwnerDocument, markOwnerDocumentSessionStarted, completeOwnerDocumentNotarization, endOwnerDocumentSession, API_BASE_URL };
 

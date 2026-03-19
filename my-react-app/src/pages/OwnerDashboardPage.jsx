@@ -328,6 +328,7 @@ const OwnerDashboardPage = () => {
   const [uploadedFileName, setUploadedFileName] = useState(restoredDashboardState.uploadedFileName || "");
   const [uploadedAssets, setUploadedAssets] = useState([]);
   const [uploadedAsset, setUploadedAsset] = useState(null);
+  const [adminTerminationNotice, setAdminTerminationNotice] = useState(null);
 
   const lastAutoSharedDocKeyRef = useRef("");
   const currentSessionIdRef = useRef(null);
@@ -542,16 +543,76 @@ const OwnerDashboardPage = () => {
       });
     };
 
+    const onAdminSessionTerminated = (data) => {
+      const terminatedSessionId = data?.sessionId;
+      const terminatedDocumentId = data?.documentId;
+      if (!terminatedSessionId && !terminatedDocumentId) return;
+
+      setAdminTerminationNotice({
+        sessionId: terminatedSessionId || null,
+        documentId: terminatedDocumentId || null,
+        message: data?.message || 'Admin terminated this session.',
+      });
+
+      if (terminatedDocumentId) {
+        setDocs((prevDocs) => {
+          const nextDocs = prevDocs.map((doc) =>
+            doc.id === terminatedDocumentId
+              ? {
+                  ...doc,
+                  status: doc.status === 'notarized' ? doc.status : 'accepted',
+                  notaryReview: doc.notaryReview === 'rejected' ? 'accepted' : (doc.notaryReview || 'accepted'),
+                }
+              : doc
+          );
+          saveDocs(nextDocs);
+          return nextDocs;
+        });
+      }
+
+      setActiveSessions((prev) => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach((docId) => {
+          if (
+            (terminatedSessionId && updated[docId] === terminatedSessionId) ||
+            (terminatedDocumentId && docId === terminatedDocumentId)
+          ) {
+            delete updated[docId];
+          }
+        });
+        return updated;
+      });
+
+      const isCurrentSession = terminatedSessionId && currentSessionIdRef.current === terminatedSessionId;
+      const isCurrentDoc = terminatedDocumentId && activeSessionDocId === terminatedDocumentId;
+
+      if (isCurrentSession || isCurrentDoc) {
+        currentSessionIdRef.current = null;
+        setActiveSessionDocId(null);
+        setNotaries([]);
+        setSessionDocName('');
+        setSessionJoined(false);
+        setUploadedFile(null);
+        setUploadedFileName('');
+        setUploadedAsset(null);
+        lastAutoSharedDocKeyRef.current = '';
+        localStorage.removeItem(DASHBOARD_STATE_KEY);
+        navigate('/owner/doc/dashboard', { replace: true });
+      }
+    };
+
     socket.on('notarySessionStarted', onNotarySessionStarted);
     socket.on('notarySessionEnded', onNotarySessionEnded);
     socket.on('ownerLeftSession', onOwnerLeftSession);
+    socket.on('adminSessionTerminated', onAdminSessionTerminated);
 
     return () => {
       socket.off('notarySessionStarted', onNotarySessionStarted);
       socket.off('notarySessionEnded', onNotarySessionEnded);
       socket.off('ownerLeftSession', onOwnerLeftSession);
+      socket.off('adminSessionTerminated', onAdminSessionTerminated);
     };
-  }, []);
+  }, [activeSessionDocId, navigate]);
 
   // Fallback sync: pull notary review status from backend in case a socket event is missed.
   useEffect(() => {
@@ -1658,6 +1719,32 @@ const OwnerDashboardPage = () => {
             />
           </div>
 
+          {adminTerminationNotice?.message && (
+            <div style={{ maxWidth: "900px", margin: "12px auto 0", padding: "0 24px" }}>
+              <div style={{
+                background: "#fff1f2",
+                border: "1px solid #fecdd3",
+                color: "#9f1239",
+                borderRadius: "10px",
+                padding: "10px 12px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "10px",
+                fontSize: "13px",
+                fontWeight: 600,
+              }}>
+                <span>{adminTerminationNotice.message}</span>
+                <button
+                  onClick={() => setAdminTerminationNotice(null)}
+                  style={{ border: "none", background: "transparent", color: "#9f1239", cursor: "pointer", fontWeight: 700 }}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Content */}
           <div style={{ maxWidth: "900px", margin: "0 auto", padding: "32px 24px" }}>
             {docs.length === 0 ? (
@@ -1830,6 +1917,11 @@ const OwnerDashboardPage = () => {
                       >
                         {status === 'notarized' ? '✓ Notarized' : displayStatus}
                       </span>
+                      {adminTerminationNotice?.documentId === doc.id && (
+                        <div style={{ marginTop: "4px", fontSize: "11px", color: "#be123c", fontWeight: 600 }}>
+                          {adminTerminationNotice.message}
+                        </div>
+                      )}
                     </div>
                   </div>
 

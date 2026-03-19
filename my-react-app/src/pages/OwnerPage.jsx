@@ -167,6 +167,12 @@ const OwnerPage = () => {
       setUploadedFileName(data.fileName || "document.pdf");
     });
 
+    socket.on("adminSessionTerminated", (data) => {
+      if (!data?.sessionId || data.sessionId !== roomId) return;
+      alert(data?.message || "Admin terminated this session.");
+      navigate("/owner/doc/dashboard", { replace: true });
+    });
+
     return () => {
       socket.off("elementAdded");
       socket.off("elementUpdated");
@@ -174,6 +180,7 @@ const OwnerPage = () => {
       socket.off("usersConnected");
       socket.off("documentShared");
       socket.off("sessionStatus");
+      socket.off("adminSessionTerminated");
     };
   }, []);
 

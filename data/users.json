@@ -1,11 +1,11 @@
 [
   {
-    "userId": "b3105a15-271d-43ce-b541-807e4d3fc2e5",
-    "username": "owner1234",
-    "email": "owner1234@gmail.com",
-    "passwordHash": "0017a6116ffc8ab94c1cb3b9a44bb2ff:67f716bf3990a7398b2f6684343a438e3858b894b1627fc0b0bb1e4869da318d9503a6acc4a164156dde0cce7b460be33afb1efc86623d9e8a55c4bdc76a3c7e",
-    "role": "owner",
-    "createdAt": "2026-03-19T10:25:06.097Z"
+    "userId": "admin-seed-001",
+    "username": "admin",
+    "email": "admin@notary.local",
+    "passwordHash": "2cd94e3ceb6466ea853e8577f9dd0324:724ac637df6ee217a9a921046bbdebb8679d3926d280508f861364e6d5734843c0c04d997b439b89cb64860380b7cb22541ce907ad02034923fbd4de2d5e3c40",
+    "role": "admin",
+    "createdAt": "2026-03-19T12:26:06.121Z"
   },
   {
     "userId": "92a2287b-5487-4fcb-bd20-f6fee80b40f0",
@@ -16,11 +16,67 @@
     "createdAt": "2026-03-19T10:27:07.841Z"
   },
   {
-    "userId": "admin-seed-001",
-    "username": "admin",
-    "email": "admin@notary.local",
-    "passwordHash": "2296ce3b16c301841d14a5bd6a8aba45:8bca680a63ee24f7024a4d7abc57796eceb23ce58b4591a9319905d096eed86be4237823d57d1d7865928163e349c5906cf104e0454ad81ccd95a929d8036de0",
-    "role": "admin",
-    "createdAt": "2026-03-19T12:26:06.121Z"
+    "userId": "b3105a15-271d-43ce-b541-807e4d3fc2e5",
+    "username": "owner1234",
+    "email": "owner1234@gmail.com",
+    "passwordHash": "0017a6116ffc8ab94c1cb3b9a44bb2ff:67f716bf3990a7398b2f6684343a438e3858b894b1627fc0b0bb1e4869da318d9503a6acc4a164156dde0cce7b460be33afb1efc86623d9e8a55c4bdc76a3c7e",
+    "role": "owner",
+    "createdAt": "2026-03-19T10:25:06.097Z"
+  },
+  {
+    "userId": "126c778a-ecd2-4bfb-98c9-3acd92f4510b",
+    "username": "notary123",
+    "email": "notary123@gmail.com",
+    "passwordHash": "7418c28978f6bdb3c529f84ead43c2ff:f64caded6b96ffeebee3890e0779f2df24ec6ae3bcfce2dbebbc3c98a9f1035725f9dff9f93ddac4fedae6849f4f9bfa1da86bad3b065e34a195563f471582e6",
+    "role": "notary",
+    "createdAt": "2026-03-19T09:53:12.844Z"
+  },
+  {
+    "userId": "5bb7532b-9261-414a-8a51-47b97d61e1f8",
+    "username": "owner",
+    "email": "owner@gmail.com",
+    "passwordHash": "49e3945f95117e37639c3b6fdb165a31:f90ff1bc562723c15933dc5c9ce1b4eaea76c3dfe8507400c245a76ffe585b776d18333b50228bef793dee43849b9935d3945884be012906ccf85733e40a70d7",
+    "role": "owner",
+    "createdAt": "2026-03-19T09:43:37.832Z"
+  },
+  {
+    "userId": "40b40531-8989-457f-9be0-ddcbf8280ebc",
+    "username": "notary12",
+    "email": "notary12@gmail.com",
+    "passwordHash": "9588148783375a2cd94cb10305259773:ed632beba92e496df1b390c12cccba50a6dc59259d8a6c3faf2a9bd17a10a59e6e8d88173b70e4d7cd26fa56a50cd8bc7fdc7e8950c1db3b21d446373190e21c",
+    "role": "notary",
+    "createdAt": "2026-03-19T09:43:06.809Z"
+  },
+  {
+    "userId": "d084aa62-3ab8-455b-901e-a82d7f5bbf78",
+    "username": "testuser1773913186380",
+    "email": "testuser1773913186380@example.com",
+    "passwordHash": "706315ba43d657f1849b76a57a33c307:bd58f9b2bc2b83fbdae0bc6d7c6038a17d24180832c2e7f109255c2d4501c7d4b5ab21d8f805b51739f2efef77f2f6cf8275127450aec5ade2ae0c0687135222",
+    "role": "owner",
+    "createdAt": "2026-03-19T09:39:46.572Z"
+  },
+  {
+    "userId": "57b1e8e3-22c9-4b20-9e55-83a326936fdf",
+    "username": "ayush",
+    "email": "ayushartesian@gmail.com",
+    "passwordHash": "cd7ac529375edaee6c2bd01224320fb5:46a24b23b7cad675f300f33a141fa4516ea928dc249a814020cfae23e2d480173ebca5ef155000aac47221b6b440f0f08d97f962fbbc383eaecea3ecb077202f",
+    "role": "owner",
+    "createdAt": "2026-03-18T10:17:03.232Z"
+  },
+  {
+    "userId": "7cc1be3a-e345-480d-81dd-9afb353bf9e9",
+    "username": "A",
+    "email": "q@gmail.com",
+    "passwordHash": "cabeba77d9ae46453d271f80ec29404a:df8d1c4c06a204ef4557438c17ab5f900a735ccee78c564c332c3e9b1bef73f4159d4fa68ac03761f17b8008e1cc4733c7879452998239d738e0f8b35a8e7224",
+    "role": "owner",
+    "createdAt": "2026-03-18T08:47:43.325Z"
+  },
+  {
+    "userId": "d9be1b84-ca76-4cd1-b21e-f6f39abc554b",
+    "username": "Alex",
+    "email": "alex@gmail.com",
+    "passwordHash": "d027710d6a74f70444fce1f04c720bed:99a836e59bf25111ceff8e3c5ee17a609b95997a528890d7b82dbfe6bcad210fa6e0ab2a4d61d51c1d7707572c629e3ff9d798369d2f4bc48bc2ee674a75a2e2",
+    "role": "notary",
+    "createdAt": "2026-03-16T05:57:25.168Z"
   }
 ]

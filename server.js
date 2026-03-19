@@ -125,6 +125,25 @@ function loadUsersFromJson() {
   }
 }
 
+function syncUsersJsonFromDb() {
+  try {
+    ensureUsersJsonFile();
+    const users = dbAll(
+      'SELECT userId, username, email, passwordHash, role, createdAt FROM users ORDER BY createdAt DESC'
+    ).map((user) => ({
+      userId: user.userId,
+      username: user.username,
+      email: user.email,
+      passwordHash: user.passwordHash,
+      role: user.role,
+      createdAt: new Date(Number(user.createdAt) || Date.now()).toISOString(),
+    }));
+    fs.writeFileSync(usersJsonPath, JSON.stringify(users, null, 2), 'utf8');
+  } catch (err) {
+    console.warn('⚠️ Failed to sync users JSON store:', err.message || err);
+  }
+}
+
 if (!fs.existsSync(path.dirname(dbPath))) {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 }
@@ -597,6 +616,170 @@ const ADMIN_SEED_PASSWORD = process.env.ADMIN_SEED_PASSWORD || 'Admin@123';
 
 // User-related queries are executed via helper functions (dbGet/dbAll) to keep sql.js usage consistent.
 
+function terminateLiveSessionByAdmin({ sessionId, adminName, adminUserId, reason, documentId }) {
+  const normalizedSessionId = normalizeRoomId(sessionId);
+  if (!normalizedSessionId) {
+    return { ok: false, code: 400, error: 'sessionId is required' };
+  }
+
+  const memorySession = sessions.get(normalizedSessionId);
+  const dbSession = dbGet('SELECT * FROM sessions WHERE sessionId = :sessionId', { sessionId: normalizedSessionId });
+
+  const memoryUsers = Array.isArray(memorySession?.users) ? memorySession.users : [];
+  const dbParticipants = (() => {
+    try {
+      const parsed = JSON.parse(dbSession?.participants || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  })();
+
+  if (!memorySession && !dbSession) {
+    return { ok: false, code: 404, error: 'Live session not found' };
+  }
+
+  const participantMap = new Map();
+  [...memoryUsers, ...dbParticipants].forEach((user) => {
+    if (!user?.socketId) return;
+    participantMap.set(user.socketId, {
+      socketId: user.socketId,
+      userId: user.userId || null,
+      username: user.username || null,
+      role: normalizeRole(user.role),
+    });
+  });
+  const participants = Array.from(participantMap.values());
+
+  let resolvedDocumentId = documentId || null;
+  let updatedDocument = null;
+
+  if (!resolvedDocumentId) {
+    const candidate = dbGet(
+      `SELECT * FROM owner_documents
+       WHERE sessionId = :sessionId
+       ORDER BY COALESCE(notaryReviewedAt, uploadedAt) DESC, uploadedAt DESC
+       LIMIT 1`,
+      { sessionId: normalizedSessionId }
+    );
+    resolvedDocumentId = candidate?.id || null;
+  }
+
+  if (resolvedDocumentId) {
+    const existing = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id: resolvedDocumentId });
+    if (existing && String(existing.status || '').trim().toLowerCase() !== 'notarized' && Number(existing.notarized) !== 1) {
+      const nowMs = now();
+      dbRun(
+        `
+        UPDATE owner_documents
+        SET status = :status,
+            inProcess = :inProcess,
+            notarized = :notarized,
+            notarizedAt = :notarizedAt,
+            notaryReview = :notaryReview,
+            notaryReviewedAt = :notaryReviewedAt
+        WHERE id = :id
+      `,
+        {
+          id: resolvedDocumentId,
+          status: 'accepted',
+          inProcess: 1,
+          notarized: 0,
+          notarizedAt: null,
+          notaryReview: 'accepted',
+          notaryReviewedAt: nowMs,
+        }
+      );
+      updatedDocument = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id: resolvedDocumentId });
+    } else {
+      updatedDocument = existing;
+    }
+  }
+
+  dbRun(
+    `UPDATE sessions
+     SET active = 0,
+         participants = :participants,
+         notaryIds = :notaryIds,
+         updatedAt = :updatedAt
+     WHERE sessionId = :sessionId`,
+    {
+      sessionId: normalizedSessionId,
+      participants: JSON.stringify([]),
+      notaryIds: JSON.stringify([]),
+      updatedAt: now(),
+    }
+  );
+
+  participants.forEach((participant) => {
+    const sock = io.sockets.sockets.get(participant.socketId);
+    if (sock) {
+      sock.leave(normalizedSessionId);
+    }
+
+    const tracked = userSessions.get(participant.socketId);
+    if (tracked && tracked.roomId === normalizedSessionId) {
+      userSessions.delete(participant.socketId);
+    }
+  });
+
+  sessions.delete(normalizedSessionId);
+  persistDatabase();
+
+  const terminatedAt = new Date().toISOString();
+  const adminActorName = String(adminName || '').trim() || 'Admin';
+  const terminationMessage = `Admin terminated this session${reason ? `: ${reason}` : ''}`;
+  const payload = {
+    sessionId: normalizedSessionId,
+    documentId: resolvedDocumentId || null,
+    status: updatedDocument?.status || 'accepted',
+    reason: reason || null,
+    message: terminationMessage,
+    terminatedAt,
+    terminatedBy: {
+      userId: adminUserId || null,
+      username: adminActorName,
+      role: 'admin',
+    },
+    participants,
+  };
+
+  io.to(normalizedSessionId).emit('usersConnected', []);
+  io.emit('adminSessionTerminated', payload);
+
+  if (resolvedDocumentId) {
+    io.emit('documentReviewUpdated', {
+      id: resolvedDocumentId,
+      documentId: resolvedDocumentId,
+      sessionId: normalizedSessionId,
+      notaryReview: 'accepted',
+      notaryName: updatedDocument?.notaryName || 'Notary',
+      notaryReviewedAt: updatedDocument?.notaryReviewedAt || now(),
+      status: updatedDocument?.status || 'accepted',
+    });
+  }
+
+  io.emit('notarySessionEnded', {
+    documentId: resolvedDocumentId || null,
+    sessionId: normalizedSessionId,
+    status: updatedDocument?.status || 'accepted',
+    notaryName: updatedDocument?.notaryName || 'Notary',
+    notaryUserId: updatedDocument?.notaryId || null,
+    endedAt: terminatedAt,
+    endedByRole: 'admin',
+    terminatedBy: payload.terminatedBy,
+    reason: reason || null,
+    message: terminationMessage,
+  });
+
+  return {
+    ok: true,
+    sessionId: normalizedSessionId,
+    documentId: resolvedDocumentId || null,
+    message: terminationMessage,
+  };
+}
+
 const hashPassword = (password, salt = crypto.randomBytes(16).toString('hex')) => {
   const hash = crypto.scryptSync(password, salt, 64).toString('hex');
   return `${salt}:${hash}`;
@@ -665,6 +848,7 @@ const ensureSeedAdminUser = () => {
         userId: existingUser.userId,
       }
     );
+    syncUsersJsonFromDb();
     console.log(`✅ Seeded admin credentials refreshed for user: ${username}`);
   } catch (error) {
     console.warn('⚠️ Failed to ensure seeded admin user:', error?.message || error);
@@ -865,6 +1049,184 @@ app.get('/api/admin/overview', (req, res) => {
   } catch (error) {
     console.error('Error fetching admin overview:', error);
     res.status(500).json({ error: 'Failed to fetch admin overview' });
+  }
+});
+
+app.get('/api/admin/users/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = dbGet(
+      'SELECT userId, username, email, role, createdAt FROM users WHERE userId = :userId',
+      { userId }
+    );
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const documents = dbAll(
+      `SELECT id, ownerId, ownerName, sessionId, name, status, uploadedAt, notaryId, notaryName
+       FROM owner_documents
+       WHERE ownerId = :userId OR notaryId = :userId
+       ORDER BY uploadedAt DESC
+       LIMIT 100`,
+      { userId }
+    );
+
+    const sessionsForUser = Array.from(sessions.entries())
+      .filter(([, session]) => Array.isArray(session.users) && session.users.some((u) => String(u.userId || '') === String(userId)))
+      .map(([sessionId, session]) => ({
+        sessionId,
+        userCount: Array.isArray(session.users) ? session.users.length : 0,
+        createdAt: session.created || null,
+      }));
+
+    return res.json({
+      user,
+      work: {
+        totalDocuments: documents.length,
+        ownedDocuments: documents.filter((d) => String(d.ownerId || '') === String(userId)).length,
+        reviewedDocuments: documents.filter((d) => String(d.notaryId || '') === String(userId)).length,
+      },
+      recentDocuments: documents,
+      liveSessions: sessionsForUser,
+    });
+  } catch (error) {
+    console.error('Error fetching admin user details:', error);
+    return res.status(500).json({ error: 'Failed to fetch user details' });
+  }
+});
+
+app.put('/api/admin/users/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+    const existing = dbGet('SELECT * FROM users WHERE userId = :userId', { userId });
+    if (!existing) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const incomingUsername = typeof req.body.username === 'string' ? req.body.username.trim() : '';
+    const incomingEmail = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const incomingRole = normalizeRole(req.body.role || existing.role);
+    const incomingPassword = typeof req.body.password === 'string' ? req.body.password : '';
+
+    if (!incomingUsername || !incomingEmail) {
+      return res.status(400).json({ error: 'username and email are required' });
+    }
+
+    if (!['owner', 'notary', 'admin'].includes(incomingRole)) {
+      return res.status(400).json({ error: 'role must be owner, notary, or admin' });
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(incomingEmail)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    const duplicateUsername = dbGet(
+      'SELECT userId FROM users WHERE username = :username AND userId != :userId',
+      { username: incomingUsername, userId }
+    );
+    if (duplicateUsername) {
+      return res.status(409).json({ error: 'Username is already taken' });
+    }
+
+    const duplicateEmail = dbGet(
+      'SELECT userId FROM users WHERE email = :email AND userId != :userId',
+      { email: incomingEmail, userId }
+    );
+    if (duplicateEmail) {
+      return res.status(409).json({ error: 'Email is already registered' });
+    }
+
+    const passwordHash = incomingPassword ? hashPassword(incomingPassword) : existing.passwordHash;
+
+    dbRun(
+      `UPDATE users
+       SET username = :username,
+           email = :email,
+           role = :role,
+           passwordHash = :passwordHash
+       WHERE userId = :userId`,
+      {
+        userId,
+        username: incomingUsername,
+        email: incomingEmail,
+        role: incomingRole,
+        passwordHash,
+      }
+    );
+    persistDatabase();
+    syncUsersJsonFromDb();
+
+    const updated = dbGet('SELECT userId, username, email, role, createdAt FROM users WHERE userId = :userId', { userId });
+    return res.json(updated);
+  } catch (error) {
+    console.error('Error updating user from admin:', error);
+    return res.status(500).json({ error: 'Failed to update user' });
+  }
+});
+
+app.delete('/api/admin/users/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+    const existing = dbGet('SELECT * FROM users WHERE userId = :userId', { userId });
+    if (!existing) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const normalizedUsername = String(existing.username || '').trim().toLowerCase();
+    if (existing.userId === ADMIN_SEED_USER_ID || normalizedUsername === String(ADMIN_SEED_USERNAME || '').trim().toLowerCase()) {
+      return res.status(400).json({ error: 'Seeded admin account cannot be deleted' });
+    }
+
+    const sessionsToTerminate = Array.from(sessions.entries())
+      .filter(([, session]) => Array.isArray(session.users) && session.users.some((u) => String(u.userId || '') === String(userId)))
+      .map(([sessionId]) => sessionId);
+
+    sessionsToTerminate.forEach((sessionId) => {
+      terminateLiveSessionByAdmin({
+        sessionId,
+        adminName: 'Admin',
+        adminUserId: null,
+        reason: `User ${existing.username} was removed by admin`,
+      });
+    });
+
+    dbRun('DELETE FROM users WHERE userId = :userId', { userId });
+    persistDatabase();
+    syncUsersJsonFromDb();
+
+    return res.json({
+      success: true,
+      deletedUserId: userId,
+      terminatedSessions: sessionsToTerminate,
+    });
+  } catch (error) {
+    console.error('Error deleting user from admin:', error);
+    return res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+app.post('/api/admin/sessions/:sessionId/terminate', (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { adminName, adminUserId, reason, documentId } = req.body || {};
+
+    const result = terminateLiveSessionByAdmin({
+      sessionId,
+      adminName,
+      adminUserId,
+      reason,
+      documentId,
+    });
+
+    if (!result.ok) {
+      return res.status(result.code || 500).json({ error: result.error || 'Failed to terminate session' });
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Error terminating session from admin:', error);
+    return res.status(500).json({ error: 'Failed to terminate session' });
   }
 });
 
