@@ -1,37 +1,18 @@
 [
   {
-    "username": "user1773640424",
-    "email": "user1773640424@example.com",
-    "passwordHash": "32bc8cfe40909029fdad71f1c8c955ee:f5ca299778e52fe5543dbf8def3de44e3680575d9fe64226dea79c804096f8a436ef39c203dd8a3642875a26bc321c32374951bbfc42da84d9eb6737c09aba4d",
+    "userId": "b3105a15-271d-43ce-b541-807e4d3fc2e5",
+    "username": "owner1234",
+    "email": "owner1234@gmail.com",
+    "passwordHash": "0017a6116ffc8ab94c1cb3b9a44bb2ff:67f716bf3990a7398b2f6684343a438e3858b894b1627fc0b0bb1e4869da318d9503a6acc4a164156dde0cce7b460be33afb1efc86623d9e8a55c4bdc76a3c7e",
     "role": "owner",
-    "createdAt": "2026-03-16T05:53:44.910Z"
+    "createdAt": "2026-03-19T10:25:06.097Z"
   },
   {
-    "username": "John",
-    "email": "john@gmail.com",
-    "passwordHash": "c0839435f8c5f482aa9a91d1c3eccd43:66cc9ab720fccccafd42b5b141c7bfcff68f55037ddb551115722f1b50f7b057239940e742edb6e23dcf1308b2979aed4378046ed52d725cf348739fc440b8a3",
-    "role": "owner",
-    "createdAt": "2026-03-16T05:56:48.794Z"
-  },
-  {
-    "username": "Alex",
-    "email": "alex@gmail.com",
-    "passwordHash": "d027710d6a74f70444fce1f04c720bed:99a836e59bf25111ceff8e3c5ee17a609b95997a528890d7b82dbfe6bcad210fa6e0ab2a4d61d51c1d7707572c629e3ff9d798369d2f4bc48bc2ee674a75a2e2",
+    "userId": "92a2287b-5487-4fcb-bd20-f6fee80b40f0",
+    "username": "notary1",
+    "email": "notary1267@gmail.com",
+    "passwordHash": "9f5de8aad345f5799ccbb1ee3fcbeedd:a19ae8f5f10ec82f65c1435f1032f3bc2a8cc56d38fc6d60325fec8a93bba5cd068688ed191aeae83d5e03155e564820a3dc1406614ec606b8953dbabb8a3394",
     "role": "notary",
-    "createdAt": "2026-03-16T05:57:25.168Z"
-  },
-  {
-    "username": "A",
-    "email": "q@gmail.com",
-    "passwordHash": "cabeba77d9ae46453d271f80ec29404a:df8d1c4c06a204ef4557438c17ab5f900a735ccee78c564c332c3e9b1bef73f4159d4fa68ac03761f17b8008e1cc4733c7879452998239d738e0f8b35a8e7224",
-    "role": "owner",
-    "createdAt": "2026-03-18T08:47:43.325Z"
-  },
-  {
-    "username": "ayush",
-    "email": "ayushartesian@gmail.com",
-    "passwordHash": "cd7ac529375edaee6c2bd01224320fb5:46a24b23b7cad675f300f33a141fa4516ea928dc249a814020cfae23e2d480173ebca5ef155000aac47221b6b440f0f08d97f962fbbc383eaecea3ecb077202f",
-    "role": "owner",
-    "createdAt": "2026-03-18T10:17:03.232Z"
+    "createdAt": "2026-03-19T10:27:07.841Z"
   }
 ]

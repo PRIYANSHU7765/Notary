@@ -8,10 +8,8 @@ const isDev = Boolean(import.meta.env.DEV);
 const API_BASE_STORAGE_KEY = 'notary.apiBaseUrl';
 const API_BASE_CANDIDATES = [
   configuredApiBaseUrl,
-  ...(isDev
-    ? ['http://localhost:5001', 'http://localhost:5002', 'http://localhost:5000']
-    : []),
-].filter(Boolean);
+  ...(isDev ? ['', 'http://localhost:5001', 'http://localhost:5002', 'http://localhost:5000'] : []),
+].filter((v) => v !== undefined && v !== null); // keep '' in the list
 
 let lastWorkingApiBaseUrl =
   (typeof window !== 'undefined' && window.localStorage.getItem(API_BASE_STORAGE_KEY)) ||

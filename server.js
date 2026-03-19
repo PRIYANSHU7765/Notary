@@ -66,6 +66,65 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Setup SQLite database (using sql.js in Node to avoid native build tool requirements)
 const dbPath = path.resolve(__dirname, 'data', 'notary.db');
+const usersJsonPath = path.resolve(__dirname, 'data', 'users.json');
+
+function ensureUsersJsonFile() {
+  if (!fs.existsSync(path.dirname(usersJsonPath))) {
+    fs.mkdirSync(path.dirname(usersJsonPath), { recursive: true });
+  }
+  if (!fs.existsSync(usersJsonPath)) {
+    fs.writeFileSync(usersJsonPath, '[]', 'utf8');
+  }
+}
+
+function appendUserToJson(user) {
+  try {
+    ensureUsersJsonFile();
+    const raw = fs.readFileSync(usersJsonPath, 'utf8');
+    const users = Array.isArray(JSON.parse(raw)) ? JSON.parse(raw) : [];
+    const exists = users.some((u) => u.username === user.username || u.email === user.email);
+    if (!exists) {
+      users.push({
+        userId: user.userId,
+        username: user.username,
+        email: user.email,
+        passwordHash: user.passwordHash,
+        role: user.role,
+        createdAt: new Date(user.createdAt).toISOString(),
+      });
+      fs.writeFileSync(usersJsonPath, JSON.stringify(users, null, 2), 'utf8');
+    }
+  } catch (err) {
+    console.warn('⚠️ Failed to write user to JSON store:', err.message || err);
+  }
+}
+
+function loadUsersFromJson() {
+  try {
+    ensureUsersJsonFile();
+    const raw = fs.readFileSync(usersJsonPath, 'utf8');
+    const users = Array.isArray(JSON.parse(raw)) ? JSON.parse(raw) : [];
+    for (const user of users) {
+      const createdAt = typeof user.createdAt === 'number'
+        ? user.createdAt
+        : Date.parse(user.createdAt) || now();
+      dbRun(
+        'INSERT OR IGNORE INTO users (userId, username, email, passwordHash, role, createdAt) VALUES (:userId, :username, :email, :passwordHash, :role, :createdAt)',
+        {
+          userId: user.userId || crypto.randomUUID(),
+          username: String(user.username || '').trim(),
+          email: String(user.email || '').trim().toLowerCase(),
+          passwordHash: String(user.passwordHash || ''),
+          role: normalizeRole(user.role),
+          createdAt,
+        }
+      );
+    }
+  } catch (err) {
+    console.warn('⚠️ Failed to load users from JSON store:', err.message || err);
+  }
+}
+
 if (!fs.existsSync(path.dirname(dbPath))) {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 }
@@ -223,6 +282,7 @@ function recoverDatabase(reason) {
   ensureAssetsSchema();
   dropLegacyDocumentsTable();
   setupPreparedStatements();
+  loadUsersFromJson();
   persistDatabase();
 }
 
@@ -295,6 +355,7 @@ async function initDatabase() {
   ensureAssetsSchema();
   dropLegacyDocumentsTable();
   setupPreparedStatements();
+  loadUsersFromJson();
   persistDatabase();
 }
 
@@ -603,6 +664,7 @@ app.post('/api/auth/register', (req, res) => {
       { userId, username, email, passwordHash, role, createdAt }
     );
     persistDatabase();
+    appendUserToJson({ userId, username, email, passwordHash, role, createdAt });
 
     const token = createToken({ username, userId, role });
     return res.json({

@@ -1,37 +1,27 @@
 import io from "socket.io-client";
 
-const API_BASE_STORAGE_KEY = 'notary.apiBaseUrl';
-
-// Detect socket server URL from environment or API base
+// Detect socket server URL based on current host
 const getSocketUrl = () => {
   const env =
     import.meta.env.VITE_API_BASE_URL ||
     import.meta.env.VITE_API_URL ||
     import.meta.env.VITE_REACT_APP_SERVER_URL;
 
-  const persistedApiBase =
-    typeof window !== 'undefined'
-      ? window.localStorage.getItem(API_BASE_STORAGE_KEY)
-      : null;
+  const isLocalhost =
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1';
 
-  // In development, connect to localhost
-  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-    return env || persistedApiBase || "http://localhost:5001";
+  // On localhost: use the backend port (or env override)
+  if (isLocalhost) {
+    return env || 'http://localhost:5001';
   }
 
-  if (env) {
-    return env;
-  }
-
-  if (persistedApiBase) {
-    return persistedApiBase;
-  }
-
-  // Fallback to Railway production URL
-  return 'https://web-production-de6d0.up.railway.app';
+  // On ngrok/remote: ALWAYS use the current page origin (no localhost override)
+  return window.location.origin;
 };
 
 const SOCKET_SERVER_URL = getSocketUrl();
+console.log('[Socket] Connecting to:', SOCKET_SERVER_URL);
 
 let socket = null;
 

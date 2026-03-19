@@ -10,15 +10,18 @@ const initSqlJs = require('sql.js');
   const tables = (tablesRes[0]?.values || []).map((r) => r[0]);
   console.log('tables:', tables);
 
-  const docsRes = db.exec('SELECT COUNT(*) as c FROM documents;');
-  const docsCount = docsRes[0]?.values?.[0]?.[0] ?? 0;
+  const docsCount = tables.includes('documents')
+    ? db.exec('SELECT COUNT(*) as c FROM documents;')[0]?.values?.[0]?.[0] ?? 0
+    : 0;
   console.log('documents count:', docsCount);
 
-  const usersRes = db.exec('SELECT COUNT(*) as c FROM users;');
-  const usersCount = usersRes[0]?.values?.[0]?.[0] ?? 0;
+  const usersCount = tables.includes('users')
+    ? db.exec('SELECT COUNT(*) as c FROM users;')[0]?.values?.[0]?.[0] ?? 0
+    : 0;
   console.log('users count:', usersCount);
 
-  const ownerDocsRes = db.exec('SELECT COUNT(*) as c FROM owner_documents;');
-  const ownerDocsCount = ownerDocsRes[0]?.values?.[0]?.[0] ?? 0;
+  const ownerDocsCount = tables.includes('owner_documents')
+    ? db.exec('SELECT COUNT(*) as c FROM owner_documents;')[0]?.values?.[0]?.[0] ?? 0
+    : 0;
   console.log('owner_documents count:', ownerDocsCount);
 })();
