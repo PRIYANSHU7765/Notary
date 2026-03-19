@@ -467,8 +467,28 @@ const OwnerDashboardPage = () => {
     const onNotarySessionEnded = (data) => {
       console.log('❌ [OWNER] Received notarySessionEnded event:', data);
 
-      // If owner is currently inside this ended session, force-close editor and return to dashboard.
       const endedSessionId = data?.sessionId;
+      const endedDocumentId = data?.documentId;
+      const endedStatus = String(data?.status || '').trim().toLowerCase();
+      const shouldResetToAccepted = endedStatus !== 'notarized';
+
+      if (endedDocumentId && shouldResetToAccepted) {
+        setDocs((prevDocs) => {
+          const nextDocs = prevDocs.map((doc) =>
+            doc.id === endedDocumentId
+              ? {
+                  ...doc,
+                  status: 'accepted',
+                  notaryReview: 'accepted',
+                  notaryName: data?.notaryName || doc.notaryName,
+                }
+              : doc
+          );
+          saveDocs(nextDocs);
+          return nextDocs;
+        });
+      }
+
       if (endedSessionId && currentSessionIdRef.current === endedSessionId) {
         currentSessionIdRef.current = null;
         setActiveSessionDocId(null);
@@ -485,9 +505,8 @@ const OwnerDashboardPage = () => {
 
       setActiveSessions((prev) => {
         const updated = { ...prev };
-        // Find and remove the session ID for the document with this sessionId
         Object.keys(updated).forEach((docId) => {
-          if (updated[docId] === data.sessionId) {
+          if (updated[docId] === endedSessionId || docId === endedDocumentId) {
             delete updated[docId];
           }
         });
@@ -666,7 +685,31 @@ const OwnerDashboardPage = () => {
     };
   }, []);
 
-  // Join session when active session is selected (restores after refresh too)
+  useEffect(() => {
+    if (!activeSessionDocId) return;
+
+    const activeDoc = docs.find((doc) => doc.id === activeSessionDocId);
+    const activeStatus = String(activeDoc?.status || '').trim().toLowerCase();
+    if (!activeDoc || activeStatus === 'session_started' || activeStatus === 'notarized') return;
+
+    currentSessionIdRef.current = null;
+    setSessionJoined(false);
+    setActiveSessionDocId(null);
+    setNotaries([]);
+    setSessionDocName('');
+    setUploadedFile(null);
+    setUploadedFileName('');
+    setUploadedAsset(null);
+    lastAutoSharedDocKeyRef.current = '';
+    localStorage.removeItem(DASHBOARD_STATE_KEY);
+
+    setActiveSessions((prev) => {
+      const updated = { ...prev };
+      delete updated[activeSessionDocId];
+      return updated;
+    });
+  }, [activeSessionDocId, docs]);
+// Join session when active session is selected (restores after refresh too)
   useEffect(() => {
     if (!activeSessionDocId) return;
 
@@ -1789,3 +1832,4 @@ const OwnerDashboardPage = () => {
 };
 
 export default OwnerDashboardPage;
+

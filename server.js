@@ -1341,6 +1341,74 @@ app.put('/api/owner-documents/:id/session-started', (req, res) => {
   }
 });
 
+app.put('/api/owner-documents/:id/session-ended', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { sessionId, notaryName, notaryUserId } = req.body || {};
+
+    const existing = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+    if (!existing) {
+      return res.status(404).json({ error: 'Owner document not found' });
+    }
+
+    let document = existing;
+
+    if (String(existing.status || '').trim().toLowerCase() !== 'notarized' && !existing.notarized) {
+      const nowMs = now();
+      dbRun(
+        `
+        UPDATE owner_documents
+        SET status = :status,
+            inProcess = :inProcess,
+            notarized = :notarized,
+            notarizedAt = :notarizedAt,
+            notaryReview = :notaryReview,
+            notaryReviewedAt = :notaryReviewedAt,
+            notaryName = :notaryName,
+            notaryId = :notaryId
+        WHERE id = :id
+      `,
+        {
+          id,
+          status: 'accepted',
+          inProcess: 1,
+          notarized: 0,
+          notarizedAt: null,
+          notaryReview: 'accepted',
+          notaryReviewedAt: nowMs,
+          notaryName: notaryName || existing.notaryName || 'Unknown Notary',
+          notaryId: notaryUserId || existing.notaryId || null,
+        }
+      );
+      persistDatabase();
+      document = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+    }
+
+    io.emit('documentReviewUpdated', {
+      id: document.id,
+      documentId: document.id,
+      sessionId: document.sessionId || sessionId || null,
+      notaryReview: document.notaryReview || 'accepted',
+      notaryName: document.notaryName || notaryName || 'Unknown Notary',
+      notaryReviewedAt: document.notaryReviewedAt,
+      status: document.status,
+    });
+
+    io.emit('notarySessionEnded', {
+      documentId: document.id,
+      sessionId: document.sessionId || sessionId || null,
+      status: document.status,
+      notaryName: document.notaryName || notaryName || 'Unknown Notary',
+      notaryUserId: document.notaryId || notaryUserId || null,
+      endedAt: new Date().toISOString(),
+    });
+
+    res.json(document);
+  } catch (error) {
+    console.error('Error ending owner document session:', error);
+    res.status(500).json({ error: 'Failed to end session' });
+  }
+});
 app.put('/api/owner-documents/:id/review', (req, res) => {
   try {
     const { id } = req.params;

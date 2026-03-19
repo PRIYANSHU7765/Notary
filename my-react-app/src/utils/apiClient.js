@@ -508,4 +508,31 @@ async function completeOwnerDocumentNotarization(documentId, notaryName) {
   }
 }
 
-export { saveSignature, fetchSignatures, deleteSignature, saveAsset, fetchAssets, deleteAsset, registerUser, loginUser, fetchUsers, saveDocument, saveOwnerDocument, fetchDocuments, fetchOwnerDocuments, fetchNotarizedDocuments, updateDocumentReview, updateOwnerDocumentReview, deleteOwnerDocument, markOwnerDocumentSessionStarted, completeOwnerDocumentNotarization, API_BASE_URL };
+async function endOwnerDocumentSession(documentId, sessionId, notaryName, notaryUserId) {
+  try {
+    const url = `/api/owner-documents/${documentId}/session-ended`;
+    console.log('[endOwnerDocumentSession] Ending:', documentId, sessionId);
+
+    const response = await fetchWithFallback(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ sessionId, notaryName, notaryUserId }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    console.log('[endOwnerDocumentSession] Success');
+    return responseData;
+  } catch (error) {
+    console.error('[endOwnerDocumentSession] Error:', error);
+    throw error;
+  }
+}
+export { saveSignature, fetchSignatures, deleteSignature, saveAsset, fetchAssets, deleteAsset, registerUser, loginUser, fetchUsers, saveDocument, saveOwnerDocument, fetchDocuments, fetchOwnerDocuments, fetchNotarizedDocuments, updateDocumentReview, updateOwnerDocumentReview, deleteOwnerDocument, markOwnerDocumentSessionStarted, completeOwnerDocumentNotarization, endOwnerDocumentSession, API_BASE_URL };
+

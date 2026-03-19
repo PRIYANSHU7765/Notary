@@ -6,7 +6,7 @@ import CanvasBoard from "../components/CanvasBoard";
 import ScreenRecorder from "../components/ScreenRecorder";
 import socket from "../socket/socket";
 import { createDocumentDragAsset } from "../utils/documentAsset";
-import { completeOwnerDocumentNotarization, fetchOwnerDocuments, markOwnerDocumentSessionStarted } from "../utils/apiClient";
+import { completeOwnerDocumentNotarization, endOwnerDocumentSession, fetchOwnerDocuments, markOwnerDocumentSessionStarted } from "../utils/apiClient";
 
 const EDITOR_WIDTH = 900;
 const EDITOR_HEIGHT = 1300;
@@ -29,22 +29,6 @@ const normalizeSessionId = (value) => {
   // Fallback: pull out notary-session-* from arbitrary text.
   const match = raw.match(/notary-session-[A-Za-z0-9_-]+/);
   return match ? match[0] : raw;
-};
-
-const getNotaryUploadedAssetsStorageKey = (sessionId) => `notary.uploadedAssets.${sessionId}`;
-
-const loadNotaryUploadedAssets = (sessionId) => {
-  if (!sessionId) return [];
-  try {
-    return JSON.parse(localStorage.getItem(getNotaryUploadedAssetsStorageKey(sessionId)) || "[]");
-  } catch {
-    return [];
-  }
-};
-
-const saveNotaryUploadedAssets = (sessionId, assets) => {
-  if (!sessionId) return;
-  localStorage.setItem(getNotaryUploadedAssetsStorageKey(sessionId), JSON.stringify(assets));
 };
 
 const getNotaryElementsStorageKey = (sessionId) => `notary.elements.${sessionId}`;
@@ -105,7 +89,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       return;
     }
 
-    setUploadedAssets(loadNotaryUploadedAssets(sessionId));
+    setUploadedAssets([]);
     setUploadedAsset(null);
   }, [sessionId]);
 
@@ -272,6 +256,34 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
     }
   }, [sessionJoined, sessionId]);
 
+  const resolveSessionDocumentId = async () => {
+    if (documentId) return documentId;
+    if (!sessionId) return null;
+
+    try {
+      const docs = await fetchOwnerDocuments({ sessionId });
+      const currentFileName = String(documentInfo?.fileName || '').trim().toLowerCase();
+
+      const preferredDoc =
+        docs.find((d) => String(d.name || '').trim().toLowerCase() === currentFileName && d.status === 'session_started') ||
+        docs.find((d) => String(d.name || '').trim().toLowerCase() === currentFileName && d.status === 'accepted') ||
+        docs.find((d) => String(d.name || '').trim().toLowerCase() === currentFileName) ||
+        docs.find((d) => d.status === 'session_started') ||
+        docs.find((d) => d.status === 'accepted') ||
+        docs[0];
+
+      const resolvedDocumentId = preferredDoc?.id || null;
+      if (resolvedDocumentId) {
+        setDocumentId(resolvedDocumentId);
+        console.log('Resolved documentId from session:', resolvedDocumentId);
+      }
+
+      return resolvedDocumentId;
+    } catch (resolveError) {
+      console.warn('Failed to resolve document by session:', resolveError);
+      return null;
+    }
+  };
   const handleJoinSession = () => {
     const normalized = normalizeSessionId(inputSessionId);
     if (normalized) {
@@ -290,11 +302,31 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
     }
   };
 
-  const handleEndSession = () => {
-    // Emit event to notify owner that session is ending
-    if (sessionId) {
+  const handleEndSession = async () => {
+    const authUser = (() => {
+      try {
+        return JSON.parse(localStorage.getItem('notary.authUser') || 'null') || {};
+      } catch {
+        return {};
+      }
+    })();
+
+    const targetDocumentId = await resolveSessionDocumentId();
+
+    if (targetDocumentId && sessionId) {
+      try {
+        await endOwnerDocumentSession(
+          targetDocumentId,
+          sessionId,
+          authUser.username || 'Notary',
+          authUser.userId
+        );
+      } catch (error) {
+        console.warn('Failed to persist session end:', error?.message || error);
+      }
+    } else if (sessionId) {
       socket.emit('notarySessionEnded', {
-        sessionId: sessionId,
+        sessionId,
       });
     }
 
@@ -324,26 +356,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
     let targetDocumentId = documentId;
 
     if (!targetDocumentId && sessionId) {
-      try {
-        const docs = await fetchOwnerDocuments({ sessionId });
-        const currentFileName = String(documentInfo?.fileName || '').trim().toLowerCase();
-
-        const preferredDoc =
-          docs.find((d) => String(d.name || '').trim().toLowerCase() === currentFileName && d.status === 'session_started') ||
-          docs.find((d) => String(d.name || '').trim().toLowerCase() === currentFileName && d.status === 'accepted') ||
-          docs.find((d) => String(d.name || '').trim().toLowerCase() === currentFileName) ||
-          docs.find((d) => d.status === 'session_started') ||
-          docs.find((d) => d.status === 'accepted') ||
-          docs[0];
-
-        targetDocumentId = preferredDoc?.id || null;
-        if (targetDocumentId) {
-          setDocumentId(targetDocumentId);
-          console.log('ℹ️ [NOTARY] Resolved documentId from session:', targetDocumentId);
-        }
-      } catch (resolveError) {
-        console.warn('⚠️ [NOTARY] Failed to resolve document by session:', resolveError);
-      }
+      targetDocumentId = await resolveSessionDocumentId();
     }
 
     if (!targetDocumentId) {
@@ -440,16 +453,12 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         userRole: "notary",
       });
 
-      setUploadedAssets((prev) => [...prev, asset]);
       setUploadedAsset(asset);
     };
     reader.readAsDataURL(file);
     e.target.value = "";
   };
 
-  useEffect(() => {
-    saveNotaryUploadedAssets(sessionId, uploadedAssets);
-  }, [sessionId, uploadedAssets]);
 
   const restoreUploadedAssets = () => {
     uploadedAssets.forEach((asset) => {
@@ -727,3 +736,4 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
 };
 
 export default NotaryPage;
+

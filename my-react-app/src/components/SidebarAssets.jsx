@@ -93,7 +93,7 @@ const SidebarAssets = ({
   useEffect(() => {
     const loadSignatures = async () => {
       try {
-        const savedSignatures = await fetchSignatures(userRole, { sessionId, userId });
+        const savedSignatures = await fetchSignatures(userRole, { userId });
         console.log('[SidebarAssets] ✅ Loaded', savedSignatures.length, 'signatures');
         
         // Add saved signatures to assets with the proper structure
@@ -125,7 +125,7 @@ const SidebarAssets = ({
   useEffect(() => {
     const loadAssets = async () => {
       try {
-        const savedAssets = await fetchAssets(userRole, { sessionId, userId });
+        const savedAssets = await fetchAssets(userRole, { userId });
         const hidden = new Set(loadHiddenAssetIds(userRole));
 
         const formattedAssets = savedAssets
@@ -695,3 +695,4 @@ const SidebarAssets = ({
 };
 
 export default SidebarAssets;
+
