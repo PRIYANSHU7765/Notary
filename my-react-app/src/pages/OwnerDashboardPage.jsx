@@ -489,7 +489,10 @@ const OwnerDashboardPage = () => {
         });
       }
 
-      if (endedSessionId && currentSessionIdRef.current === endedSessionId) {
+      const isCurrentSession = endedSessionId && currentSessionIdRef.current === endedSessionId;
+      const isCurrentDoc = endedDocumentId && activeSessionDocId && activeSessionDocId === endedDocumentId;
+
+      if (isCurrentSession || isCurrentDoc) {
         currentSessionIdRef.current = null;
         setActiveSessionDocId(null);
         setNotaries([]);

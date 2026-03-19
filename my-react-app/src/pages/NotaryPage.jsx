@@ -313,6 +313,13 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
 
     const targetDocumentId = await resolveSessionDocumentId();
 
+    const payload = {
+      sessionId: sessionId || null,
+      documentId: targetDocumentId || null,
+      notaryName: authUser.username || 'Notary',
+      notaryUserId: authUser.userId || null,
+    };
+
     if (targetDocumentId && sessionId) {
       try {
         await endOwnerDocumentSession(
@@ -324,10 +331,10 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       } catch (error) {
         console.warn('Failed to persist session end:', error?.message || error);
       }
-    } else if (sessionId) {
-      socket.emit('notarySessionEnded', {
-        sessionId,
-      });
+    }
+
+    if (sessionId) {
+      socket.emit('notarySessionEnded', payload);
     }
 
     setSessionJoined(false);

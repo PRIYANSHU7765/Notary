@@ -89,6 +89,12 @@ const SidebarAssets = ({
     setTextInput("");
   }, [userRole, assetScopeKey]);
 
+  // Reset session-scoped assets when we switch sessions
+  useEffect(() => {
+    setAssets(getBaseAssets(userRole));
+    persistedAssetIdsRef.current = new Set();
+  }, [sessionId, userRole]);
+
   // Fetch saved signatures from backend on mount
   useEffect(() => {
     const loadSignatures = async () => {
@@ -125,7 +131,7 @@ const SidebarAssets = ({
   useEffect(() => {
     const loadAssets = async () => {
       try {
-        const savedAssets = await fetchAssets(userRole, { userId });
+        const savedAssets = await fetchAssets(userRole, { userId, sessionId });
         const hidden = new Set(loadHiddenAssetIds(userRole));
 
         const formattedAssets = savedAssets
