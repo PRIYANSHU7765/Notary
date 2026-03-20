@@ -6,6 +6,8 @@ import CanvasBoard from "../components/CanvasBoard";
 import ScreenRecorder from "../components/ScreenRecorder";
 import socket from "../socket/socket";
 import { createDocumentDragAsset } from "../utils/documentAsset";
+import { bytesToDataUrl, generateNotarizedPdfBytes } from "../utils/pdfUtils";
+import { completeOwnerDocumentNotarization, endOwnerDocumentSession, fetchOwnerDocuments, markOwnerDocumentSessionStarted } from "../utils/apiClient";
 
 const EDITOR_WIDTH = 900;
 const EDITOR_HEIGHT = 1300;
@@ -30,22 +32,6 @@ const normalizeSessionId = (value) => {
   return match ? match[0] : raw;
 };
 
-const getNotaryUploadedAssetsStorageKey = (sessionId) => `notary.uploadedAssets.${sessionId}`;
-
-const loadNotaryUploadedAssets = (sessionId) => {
-  if (!sessionId) return [];
-  try {
-    return JSON.parse(localStorage.getItem(getNotaryUploadedAssetsStorageKey(sessionId)) || "[]");
-  } catch {
-    return [];
-  }
-};
-
-const saveNotaryUploadedAssets = (sessionId, assets) => {
-  if (!sessionId) return;
-  localStorage.setItem(getNotaryUploadedAssetsStorageKey(sessionId), JSON.stringify(assets));
-};
-
 const getNotaryElementsStorageKey = (sessionId) => `notary.elements.${sessionId}`;
 
 const loadNotaryElements = (sessionId) => {
@@ -65,6 +51,7 @@ const saveNotaryElements = (sessionId, elements) => {
 const NotaryPage = ({ sessionId: passedSessionId }) => {
   const [elements, setElements] = useState([]);
   const [sessionId, setSessionId] = useState(passedSessionId || null);
+  const [documentId, setDocumentId] = useState(null);
   const [connectedUsers, setConnectedUsers] = useState([]);
   const [documentInfo, setDocumentInfo] = useState(null);
   const [isConnected, setIsConnected] = useState(socket.connected);
@@ -74,9 +61,24 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   const [uploadedAssets, setUploadedAssets] = useState([]);
   const [uploadedAsset, setUploadedAsset] = useState(null);
   const [isAssetBoxMode, setIsAssetBoxMode] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+  const [toastType, setToastType] = useState("info");
+  const toastTimerRef = useRef(null);
   const editorScrollRef = useRef(null);
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
+
+  const showToast = (message, type = "info", duration = 2600) => {
+    setToastMessage(message);
+    setToastType(type);
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMessage("");
+      toastTimerRef.current = null;
+    }, duration);
+  };
 
   // Auto-fill from URL param even if not passed as prop (direct URL open)
   const urlSessionId = normalizeSessionId(new URLSearchParams(window.location.search).get("sessionId"));
@@ -85,10 +87,14 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   const [inputSessionId, setInputSessionId] = useState(initialSessionId);
   const [sessionJoined, setSessionJoined] = useState(!!initialSessionId);
 
-  // If session ID came from URL, treat it as already set
+  // If session ID came from URL, set it immediately and mark as joined
   useEffect(() => {
     if (initialSessionId && !sessionId) {
       setSessionId(initialSessionId);
+      setSessionJoined(true);
+      if (initialSessionId) {
+        localStorage.setItem("notary.lastSessionId", initialSessionId);
+      }
     }
   }, []);
 
@@ -99,7 +105,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       return;
     }
 
-    setUploadedAssets(loadNotaryUploadedAssets(sessionId));
+    setUploadedAssets([]);
     setUploadedAsset(null);
   }, [sessionId]);
 
@@ -125,55 +131,53 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         }
       })();
 
-      socket.emit("joinSession", {
-        roomId: sessionId,
-        role: "notary",
-        userId: authUser.userId || socket.id,
-        username: authUser.username || "Notary",
-      });
-
-      // Listen for element updates from owner
-      socket.on("elementAdded", (element) => {
-        console.log("Owner added element:", element);
+      const onElementAdded = (element) => {
+        console.log("✏️ [NOTARY] Owner added element:", element);
         setElements((prev) => [...prev, element]);
-      });
+      };
 
-      socket.on("elementUpdated", (updatedElement) => {
+      const onElementUpdated = (updatedElement) => {
+        console.log("🔄 [NOTARY] Owner updated element:", updatedElement.id);
         setElements((prev) =>
           prev.map((el) => (el.id === updatedElement.id ? updatedElement : el))
         );
-      });
+      };
 
-      socket.on("elementRemoved", (elementId) => {
+      const onElementRemoved = (elementId) => {
+        console.log("🗑️ [NOTARY] Owner removed element:", elementId);
         setElements((prev) => prev.filter((el) => el.id !== elementId));
-      });
+      };
 
-      socket.on("usersConnected", (users) => {
+      const onUsersConnected = (users) => {
+        console.log("👥 [NOTARY] Users connected:", users);
         setConnectedUsers(users);
-        // Check if owner is in the connected users
-        const owner = users.find(u => u.role === 'owner');
+        const owner = users.find((u) => u.role === 'owner');
         setOwnerConnected(!!owner);
-      });
+      };
 
-      socket.on("sessionStatus", (status) => {
-        console.log("Session status:", status);
+      const onSessionStatus = (status) => {
+        console.log("📊 [NOTARY] Session status:", status);
         setSessionStatus(status);
-        setOwnerConnected(status.ownerConnected);
-      });
+        setOwnerConnected(Boolean(status?.ownerConnected));
+        if (Array.isArray(status?.allUsers)) {
+          setConnectedUsers(status.allUsers);
+        }
+      };
 
-      socket.on("documentUploaded", (docInfo) => {
+      const onDocumentUploaded = (docInfo) => {
+        console.log("📄 [NOTARY] Document uploaded:", docInfo);
         setDocumentInfo(docInfo);
-      });
+      };
 
-      socket.on("documentShared", (data) => {
+      const onDocumentShared = (data) => {
+        console.log("📄 [NOTARY] Document shared by owner:", data.fileName);
         setPdfDataUrl(data.pdfDataUrl);
         setDocumentInfo({ fileName: data.fileName });
-      });
+      };
 
-      socket.on("ownerLeftSession", (data) => {
-        console.log("Owner left session:", data.sessionId);
+      const onOwnerLeftSession = (data) => {
+        console.log("👤 [NOTARY] Owner left session:", data.sessionId);
         if (data.sessionId === sessionId) {
-          // Owner left this session, clean up and redirect
           setSessionJoined(false);
           setSessionId(null);
           setInputSessionId("");
@@ -185,21 +189,148 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
           setOwnerConnected(false);
           setConnectedUsers([]);
         }
+      };
+
+      const onAdminSessionTerminated = (data) => {
+        if (!data?.sessionId || data.sessionId !== sessionId) return;
+
+        showToast(data.message || "Admin terminated this session", "error", 4600);
+
+        setSessionJoined(false);
+        setSessionId(null);
+        setInputSessionId("");
+        setElements([]);
+        setUploadedAssets([]);
+        setUploadedAsset(null);
+        setPdfDataUrl(null);
+        setDocumentInfo(null);
+        setOwnerConnected(false);
+        setConnectedUsers([]);
+        setDocumentId(null);
+
+        localStorage.removeItem("notary.lastSessionId");
+        const params = new URLSearchParams(window.location.search);
+        params.delete("sessionId");
+        params.delete("role");
+        params.delete("documentId");
+        window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+
+        window.setTimeout(() => {
+          navigate("/notary/doc/dashboard");
+        }, 200);
+      };
+
+      // Register listeners BEFORE joining to avoid missing initial presence events.
+      socket.on("elementAdded", onElementAdded);
+      socket.on("elementUpdated", onElementUpdated);
+      socket.on("elementRemoved", onElementRemoved);
+      socket.on("usersConnected", onUsersConnected);
+      socket.on("sessionStatus", onSessionStatus);
+      socket.on("documentUploaded", onDocumentUploaded);
+      socket.on("documentShared", onDocumentShared);
+      socket.on("ownerLeftSession", onOwnerLeftSession);
+      socket.on("adminSessionTerminated", onAdminSessionTerminated);
+
+      console.log('📡 [NOTARY] Joining session:', {roomId: sessionId, role: 'notary', userId: authUser.userId});
+      socket.emit("joinSession", {
+        roomId: sessionId,
+        role: "notary",
+        userId: authUser.userId || socket.id,
+        username: authUser.username || "Notary",
       });
 
+      // Check if this is a fresh session start (sessionStarted=true in URL)
+      const params = new URLSearchParams(window.location.search);
+      const wasJustStarted = params.get('sessionStarted') === 'true';
+      const documentId = params.get('documentId') || null;
+      setDocumentId(documentId);
+
+      if (wasJustStarted) {
+        console.log('🔔 [NOTARY] Fresh session start detected - will emit notarySessionStarted');
+
+        if (documentId) {
+          markOwnerDocumentSessionStarted(
+            documentId,
+            sessionId,
+            authUser.username || 'Notary',
+            authUser.userId
+          ).catch((error) => {
+            console.warn('⚠️ [NOTARY] Failed to persist session_started via API:', error?.message || error);
+          });
+        } else {
+          console.warn('⚠️ [NOTARY] Missing documentId in URL; cannot persist session_started state');
+        }
+        
+        // Emit immediately if socket is connected, otherwise wait with retry
+        const attemptEmit = (attempt = 0) => {
+          if (socket.connected) {
+            console.log('🔔 [NOTARY] Socket connected - Emitting notarySessionStarted');
+            socket.emit('notarySessionStarted', {
+              documentId: documentId,
+              sessionId: sessionId,
+              notaryName: authUser.username || 'Notary',
+              notaryUserId: authUser.userId,
+              timestamp: new Date().toISOString(),
+            });
+            
+            // Remove the flag from URL so we don't re-emit on refresh
+            params.delete('sessionStarted');
+            params.delete('documentId');
+            window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+          } else if (attempt < 5) {
+            // Retry up to 5 times (500ms total wait)
+            console.log(`⏳ [NOTARY] Socket not ready yet, retrying... (attempt ${attempt + 1}/5)`);
+            setTimeout(() => attemptEmit(attempt + 1), 100);
+          } else {
+            console.warn('❌ [NOTARY] Failed to emit notarySessionStarted - socket not connected after retries');
+          }
+        };
+        
+        attemptEmit();
+      }
+
       return () => {
-        socket.off("elementAdded");
-        socket.off("elementUpdated");
-        socket.off("elementRemoved");
-        socket.off("usersConnected");
-        socket.off("documentUploaded");
-        socket.off("documentShared");
-        socket.off("sessionStatus");
-        socket.off("ownerLeftSession");
+        socket.off("elementAdded", onElementAdded);
+        socket.off("elementUpdated", onElementUpdated);
+        socket.off("elementRemoved", onElementRemoved);
+        socket.off("usersConnected", onUsersConnected);
+        socket.off("documentUploaded", onDocumentUploaded);
+        socket.off("documentShared", onDocumentShared);
+        socket.off("sessionStatus", onSessionStatus);
+        socket.off("ownerLeftSession", onOwnerLeftSession);
+        socket.off("adminSessionTerminated", onAdminSessionTerminated);
       };
     }
   }, [sessionJoined, sessionId]);
 
+  const resolveSessionDocumentId = async () => {
+    if (documentId) return documentId;
+    if (!sessionId) return null;
+
+    try {
+      const docs = await fetchOwnerDocuments({ sessionId });
+      const currentFileName = String(documentInfo?.fileName || '').trim().toLowerCase();
+
+      const preferredDoc =
+        docs.find((d) => String(d.name || '').trim().toLowerCase() === currentFileName && d.status === 'session_started') ||
+        docs.find((d) => String(d.name || '').trim().toLowerCase() === currentFileName && d.status === 'accepted') ||
+        docs.find((d) => String(d.name || '').trim().toLowerCase() === currentFileName) ||
+        docs.find((d) => d.status === 'session_started') ||
+        docs.find((d) => d.status === 'accepted') ||
+        docs[0];
+
+      const resolvedDocumentId = preferredDoc?.id || null;
+      if (resolvedDocumentId) {
+        setDocumentId(resolvedDocumentId);
+        console.log('Resolved documentId from session:', resolvedDocumentId);
+      }
+
+      return resolvedDocumentId;
+    } catch (resolveError) {
+      console.warn('Failed to resolve document by session:', resolveError);
+      return null;
+    }
+  };
   const handleJoinSession = () => {
     const normalized = normalizeSessionId(inputSessionId);
     if (normalized) {
@@ -218,12 +349,39 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
     }
   };
 
-  const handleEndSession = () => {
-    // Emit event to notify owner that session is ending
+  const handleEndSession = async () => {
+    const authUser = (() => {
+      try {
+        return JSON.parse(localStorage.getItem('notary.authUser') || 'null') || {};
+      } catch {
+        return {};
+      }
+    })();
+
+    const targetDocumentId = await resolveSessionDocumentId();
+
+    const payload = {
+      sessionId: sessionId || null,
+      documentId: targetDocumentId || null,
+      notaryName: authUser.username || 'Notary',
+      notaryUserId: authUser.userId || null,
+    };
+
+    if (targetDocumentId && sessionId) {
+      try {
+        await endOwnerDocumentSession(
+          targetDocumentId,
+          sessionId,
+          authUser.username || 'Notary',
+          authUser.userId
+        );
+      } catch (error) {
+        console.warn('Failed to persist session end:', error?.message || error);
+      }
+    }
+
     if (sessionId) {
-      socket.emit('notarySessionEnded', {
-        sessionId: sessionId,
-      });
+      socket.emit('notarySessionEnded', payload);
     }
 
     setSessionJoined(false);
@@ -236,14 +394,75 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
     setDocumentInfo(null);
     setOwnerConnected(false);
     setConnectedUsers([]);
+    setDocumentId(null);
 
     localStorage.removeItem("notary.lastSessionId");
     const params = new URLSearchParams(window.location.search);
     params.delete("sessionId");
     params.delete("role");
+    params.delete("documentId");
     window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
 
     navigate("/notary/doc/dashboard");
+  };
+
+  const handleMarkNotarized = async () => {
+    showToast('Notarization started…', 'info');
+
+    let targetDocumentId = documentId;
+
+    if (!targetDocumentId && sessionId) {
+      targetDocumentId = await resolveSessionDocumentId();
+    }
+
+    if (!targetDocumentId) {
+      showToast('Unable to resolve the session document. Please refresh and try again.', 'error');
+      console.warn('⚠️ [NOTARY] Mark notarized aborted: no target document id', {
+        sessionId,
+        documentInfo,
+      });
+      return;
+    }
+
+    const authUser = (() => {
+      try {
+        return JSON.parse(localStorage.getItem('notary.authUser') || 'null') || {};
+      } catch {
+        return {};
+      }
+    })();
+
+    let notarizedDataUrl = null;
+    if (pdfDataUrl) {
+      try {
+        const bytes = await generateNotarizedPdfBytes(pdfDataUrl, elements, {
+          editorWidth: EDITOR_WIDTH,
+          editorHeight: EDITOR_HEIGHT,
+        });
+        notarizedDataUrl = bytesToDataUrl(bytes, "application/pdf");
+      } catch (error) {
+        console.warn('⚠️ [NOTARY] Failed to generate notarized PDF:', error);
+      }
+    }
+
+    if (!notarizedDataUrl) {
+      showToast('Unable to generate notarized PDF. Please try again.', 'error');
+      console.warn('⚠️ Notarization aborted: no notarized PDF available', { elements, pdfDataUrl });
+      return;
+    }
+
+    try {
+      await completeOwnerDocumentNotarization(
+        targetDocumentId,
+        authUser.username || 'Notary',
+        notarizedDataUrl
+      );
+      console.log('✅ Notarization marked complete for', targetDocumentId);
+      showToast('✅ Document notarized successfully!', 'success');
+    } catch (error) {
+      console.error('❌ Failed to mark document notarized:', error);
+      showToast('Failed to mark document notarized. Please try again.', 'error');
+    }
   };
 
   useEffect(() => {
@@ -315,16 +534,12 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         userRole: "notary",
       });
 
-      setUploadedAssets((prev) => [...prev, asset]);
       setUploadedAsset(asset);
     };
     reader.readAsDataURL(file);
     e.target.value = "";
   };
 
-  useEffect(() => {
-    saveNotaryUploadedAssets(sessionId, uploadedAssets);
-  }, [sessionId, uploadedAssets]);
 
   const restoreUploadedAssets = () => {
     uploadedAssets.forEach((asset) => {
@@ -424,6 +639,14 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       {/* Sidebar */}
       <SidebarAssets
         userRole="notary"
+        sessionId={sessionId}
+        userId={(() => {
+          try {
+            return JSON.parse(localStorage.getItem('notary.authUser') || 'null')?.userId;
+          } catch {
+            return undefined;
+          }
+        })()}
         uploadedAsset={uploadedAsset}
         uploadedAssets={uploadedAssets}
         onAssetBoxClick={() => setIsAssetBoxMode(true)}
@@ -431,7 +654,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       />
 
       {/* Main Content */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "15px", overflowY: "auto" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "15px", overflowY: "auto", position: "relative" }}>
         {/* Header */}
         <div style={{ marginBottom: "15px", backgroundColor: "#f3e5f5", padding: "15px", borderRadius: "5px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
@@ -446,6 +669,23 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
               }}>
                 {isConnected ? "● Server connected" : "● Server offline"}
               </span>
+              <button
+                onClick={handleMarkNotarized}
+                disabled={!ownerConnected}
+                style={{
+                  padding: "6px 10px",
+                  backgroundColor: ownerConnected ? "#2563eb" : "#9ca3af",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: ownerConnected ? "pointer" : "not-allowed",
+                  fontSize: "12px",
+                  fontWeight: "600",
+                }}
+                title={ownerConnected ? "Mark document as notarized" : "Connect to owner to complete notarization"}
+              >
+                Mark Notarized
+              </button>
               <button
                 onClick={handleEndSession}
                 style={{
@@ -571,9 +811,37 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
             </div>
           )}
         </div>
+
+        {/* Toast */}
+        {toastMessage && (
+          <div
+            style={{
+              position: "fixed",
+              bottom: "20px",
+              right: "20px",
+              minWidth: "260px",
+              padding: "16px 18px",
+              borderRadius: "12px",
+              boxShadow: "0 12px 26px rgba(0,0,0,0.16)",
+              backgroundColor: toastType === "success" ? "#22c55e" : toastType === "error" ? "#ef4444" : "#2563eb",
+              color: "white",
+              fontWeight: 600,
+              zIndex: 110,
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+            }}
+          >
+            <span style={{ fontSize: "18px" }}>
+              {toastType === "success" ? "✅" : toastType === "error" ? "⚠️" : "ℹ️"}
+            </span>
+            <span style={{ flex: 1, fontSize: "13px" }}>{toastMessage}</span>
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
 export default NotaryPage;
+

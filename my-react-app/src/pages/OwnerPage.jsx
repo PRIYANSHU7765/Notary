@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { pdfjs } from "react-pdf";
-import { PDFDocument } from "pdf-lib";
+import { generateNotarizedPdfBytes } from "../utils/pdfUtils";
 import PdfViewer from "../components/PdfViewer";
 import SidebarAssets from "../components/SidebarAssets";
 import CanvasBoard from "../components/CanvasBoard";
@@ -78,6 +78,14 @@ const OwnerPage = () => {
   const [notaryConnected, setNotaryConnected] = useState(false);
   const [sessionStatus, setSessionStatus] = useState(null);
 
+  const authUser = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('notary.authUser') || 'null') || {};
+    } catch {
+      return {};
+    }
+  })();
+
   // Track backend connection status
   useEffect(() => {
     const onConnect = () => setIsConnected(true);
@@ -113,6 +121,7 @@ const OwnerPage = () => {
       }
     })();
 
+    console.log('📡 [OWNER] Joining session:', {roomId, role: 'owner', userId: authUser.userId});
     socket.emit("joinSession", {
       roomId,
       role: "owner",
@@ -122,21 +131,24 @@ const OwnerPage = () => {
 
     // Listen for element updates from notary
     socket.on("elementAdded", (element) => {
-      console.log("Notary added element:", element);
+      console.log("✏️ [OWNER] Notary added element:", element);
       setElements((prev) => [...prev, element]);
     });
 
     socket.on("elementUpdated", (updatedElement) => {
+      console.log("🔄 [OWNER] Notary updated element:", updatedElement.id);
       setElements((prev) =>
         prev.map((el) => (el.id === updatedElement.id ? updatedElement : el))
       );
     });
 
     socket.on("elementRemoved", (elementId) => {
+      console.log("🗑️ [OWNER] Notary removed element:", elementId);
       setElements((prev) => prev.filter((el) => el.id !== elementId));
     });
 
     socket.on("usersConnected", (users) => {
+      console.log("👥 [OWNER] Users connected:", users);
       setConnectedUsers(users);
       // Check if notary is in the connected users
       const notary = users.find(u => u.role === 'notary');
@@ -144,14 +156,21 @@ const OwnerPage = () => {
     });
 
     socket.on("sessionStatus", (status) => {
-      console.log("Session status:", status);
+      console.log("📊 [OWNER] Session status:", status);
       setSessionStatus(status);
       setNotaryConnected(status.notaryConnected);
     });
 
     socket.on("documentShared", (data) => {
+      console.log("📄 [OWNER] Document shared by notary:", data.fileName);
       setUploadedFile(data.pdfDataUrl);
       setUploadedFileName(data.fileName || "document.pdf");
+    });
+
+    socket.on("adminSessionTerminated", (data) => {
+      if (!data?.sessionId || data.sessionId !== roomId) return;
+      alert(data?.message || "Admin terminated this session.");
+      navigate("/owner/doc/dashboard", { replace: true });
     });
 
     return () => {
@@ -161,6 +180,7 @@ const OwnerPage = () => {
       socket.off("usersConnected");
       socket.off("documentShared");
       socket.off("sessionStatus");
+      socket.off("adminSessionTerminated");
     };
   }, []);
 
@@ -271,41 +291,13 @@ const OwnerPage = () => {
       setIsDownloading(true);
       setDownloadError("");
 
-      const inputBytes =
-        typeof uploadedFile === "string"
-          ? await fetch(uploadedFile).then((response) => response.arrayBuffer())
-          : await uploadedFile.arrayBuffer();
-      const pdfDoc = await PDFDocument.load(inputBytes);
-      const [firstPage] = pdfDoc.getPages();
+      const pdfBytes = await generateNotarizedPdfBytes(uploadedFile, elements, {
+        editorWidth: EDITOR_WIDTH,
+        editorHeight: EDITOR_HEIGHT,
+      });
 
-      if (!firstPage) {
-        throw new Error("The uploaded PDF has no pages.");
-      }
-
-      const { width: pdfWidth, height: pdfHeight } = firstPage.getSize();
-
-      for (const element of elements) {
-        if (!element.image) continue;
-
-        const pngBytes = await toPngArrayBuffer(element.image);
-        const embeddedImage = await pdfDoc.embedPng(pngBytes);
-
-        const drawWidth = ((element.width || 100) / EDITOR_WIDTH) * pdfWidth;
-        const drawHeight = ((element.height || 100) / EDITOR_HEIGHT) * pdfHeight;
-        const drawX = (element.x / EDITOR_WIDTH) * pdfWidth;
-        const drawY = pdfHeight - (((element.y || 0) + (element.height || 100)) / EDITOR_HEIGHT) * pdfHeight;
-
-        firstPage.drawImage(embeddedImage, {
-          x: drawX,
-          y: drawY,
-          width: drawWidth,
-          height: drawHeight,
-        });
-      }
-
-      const outputBytes = await pdfDoc.save();
-      const outputBlob = new Blob([outputBytes], { type: "application/pdf" });
-      const outputUrl = URL.createObjectURL(outputBlob);
+      const blob = new Blob([pdfBytes], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
 
       const resolvedName =
         uploadedFileName ||
@@ -315,11 +307,12 @@ const OwnerPage = () => {
         : resolvedName;
 
       const link = document.createElement("a");
-      link.href = outputUrl;
+      link.href = url;
       link.download = `${sourceName}-with-signatures.pdf`;
+      document.body.appendChild(link);
       link.click();
-
-      URL.revokeObjectURL(outputUrl);
+      link.remove();
+      URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Failed to generate updated PDF:", error);
       setDownloadError(error?.message || "Failed to create updated PDF.");
@@ -356,7 +349,13 @@ const OwnerPage = () => {
   return (
     <div style={{ display: "flex", height: "100vh" }}>
       {/* Sidebar */}
-      <SidebarAssets userRole="owner" showAssets={true} uploadedAsset={uploadedAsset} />
+      <SidebarAssets
+        userRole="owner"
+        sessionId={sessionId}
+        userId={authUser.userId}
+        showAssets={true}
+        uploadedAsset={uploadedAsset}
+      />
 
       {/* Main Content */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "15px", overflowY: "auto" }}>

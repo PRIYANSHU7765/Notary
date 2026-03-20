@@ -1,16 +1,27 @@
 import io from "socket.io-client";
 
-// Detect socket server URL from environment or API base
+// Detect socket server URL based on current host
 const getSocketUrl = () => {
-  const env = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
-  if (env) {
-    return env;
+  const env =
+    import.meta.env.VITE_API_BASE_URL ||
+    import.meta.env.VITE_API_URL ||
+    import.meta.env.VITE_REACT_APP_SERVER_URL;
+
+  const isLocalhost =
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1';
+
+  // On localhost: use the backend port (or env override)
+  if (isLocalhost) {
+    return env || 'http://localhost:5001';
   }
-  // Fallback to Railway production URL
-  return 'https://web-production-de6d0.up.railway.app';
+
+  // On ngrok/remote: ALWAYS use the current page origin (no localhost override)
+  return window.location.origin;
 };
 
 const SOCKET_SERVER_URL = getSocketUrl();
+console.log('[Socket] Connecting to:', SOCKET_SERVER_URL);
 
 let socket = null;
 

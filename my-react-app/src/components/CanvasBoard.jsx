@@ -116,10 +116,15 @@ const DraggableImageElement = ({ element, onChange, onSelect, isSelected, notary
         <Transformer
           ref={transformerRef}
           rotateEnabled={true}
+          keepRatio={false}
           enabledAnchors={[
             "top-left",
+            "top-center",
             "top-right",
+            "middle-left",
+            "middle-right",
             "bottom-left",
+            "bottom-center",
             "bottom-right",
           ]}
           boundBoxFunc={(oldBox, newBox) => {
