@@ -26,11 +26,11 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const initSqlJs = require('sql.js');
-let Twilio = null;
+let nodemailer = null;
 try {
-  Twilio = require('twilio');
+  nodemailer = require('nodemailer');
 } catch {
-  Twilio = null;
+  nodemailer = null;
 }
 
 const app = express();
@@ -899,10 +899,13 @@ const ADMIN_SEED_USER_ID = process.env.ADMIN_SEED_USER_ID || 'admin-seed-001';
 const ADMIN_SEED_USERNAME = process.env.ADMIN_SEED_USERNAME || 'admin';
 const ADMIN_SEED_EMAIL = process.env.ADMIN_SEED_EMAIL || 'admin@notary.local';
 const ADMIN_SEED_PASSWORD = process.env.ADMIN_SEED_PASSWORD || 'Admin@123';
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || '';
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
-const TWILIO_VERIFY_SERVICE_SID = process.env.TWILIO_VERIFY_SERVICE_SID || '';
-const OTP_CHANNEL_DEFAULT = process.env.OTP_CHANNEL_DEFAULT || 'sms';
+const SMTP_HOST = process.env.SMTP_HOST || '';
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_SECURE = String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true';
+const SMTP_USER = process.env.SMTP_USER || '';
+const SMTP_PASS = process.env.SMTP_PASS || '';
+const SMTP_FROM = process.env.SMTP_FROM || SMTP_USER || '';
+const OTP_CHANNEL_DEFAULT = process.env.OTP_CHANNEL_DEFAULT || 'email';
 const OTP_TTL_MS = Number(process.env.OTP_TTL_MS || 10 * 60 * 1000);
 const KBA_STORAGE_DIR = path.resolve(__dirname, 'data', 'kba');
 
@@ -929,10 +932,27 @@ function shouldRequireKbaForRole(role) {
   return ['owner', 'notary'].includes(normalizeRole(role));
 }
 
-function getTwilioClient() {
-  if (!Twilio) return null;
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_VERIFY_SERVICE_SID) return null;
-  return Twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+function isValidEmailAddress(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
+function getSmtpTransporter() {
+  if (!nodemailer) {
+    throw new Error('nodemailer package is not installed');
+  }
+  if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS || !SMTP_FROM) {
+    throw new Error('SMTP configuration is incomplete (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM)');
+  }
+
+  return nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_SECURE,
+    auth: {
+      user: SMTP_USER,
+      pass: SMTP_PASS,
+    },
+  });
 }
 
 // User-related queries are executed via helper functions (dbGet/dbAll) to keep sql.js usage consistent.
@@ -1220,25 +1240,19 @@ const requireKbaApproved = (req, res, next) => {
 const generateOtpCode = () => `${Math.floor(100000 + Math.random() * 900000)}`;
 const hashOtpCode = (code) => crypto.createHash('sha256').update(String(code)).digest('hex');
 
-async function sendOtpViaTwilio({ destination, channel, code }) {
-  const client = getTwilioClient();
-  if (!client) {
-    console.warn('⚠️ Twilio config missing or package unavailable, OTP fallback is active.');
-    console.log(`[OTP FALLBACK] destination=${destination} channel=${channel} code=${code}`);
-    return { sid: 'otp-fallback-local' };
-  }
+async function sendOtpViaEmail({ destination, code }) {
+  const transporter = getSmtpTransporter();
+  const ttlMinutes = Math.max(1, Math.round(OTP_TTL_MS / 60000));
 
-  if (TWILIO_VERIFY_SERVICE_SID) {
-    return client.verify.v2.services(TWILIO_VERIFY_SERVICE_SID).verifications.create({
-      to: destination,
-      channel,
-    });
-  }
-
-  return client.messages.create({
+  const result = await transporter.sendMail({
+    from: SMTP_FROM,
     to: destination,
-    body: `Your verification code is ${code}. It expires in 10 minutes.`,
+    subject: 'Your Notary OTP Code',
+    text: `Your verification code is ${code}. It expires in ${ttlMinutes} minutes.`,
+    html: `<p>Your verification code is <strong>${code}</strong>.</p><p>It expires in ${ttlMinutes} minutes.</p>`,
   });
+
+  return { messageId: result?.messageId || null };
 }
 
 const ensureSeedAdminUser = () => {
@@ -1441,15 +1455,19 @@ app.post('/api/kba/otp/send', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'KBA submission is pending review; cannot send OTP' });
     }
 
-    const channel = String(req.body?.channel || OTP_CHANNEL_DEFAULT || 'sms').trim().toLowerCase();
-    const destination = String(req.body?.destination || req.auth?.phoneNumber || '').trim();
+    const channel = String(req.body?.channel || OTP_CHANNEL_DEFAULT || 'email').trim().toLowerCase();
+    const destination = String(req.body?.destination || req.auth?.email || '').trim();
 
     if (!destination) {
-      return res.status(400).json({ error: 'destination is required (phone number or email)' });
+      return res.status(400).json({ error: 'destination email is required' });
     }
 
-    if (!['sms', 'email'].includes(channel)) {
-      return res.status(400).json({ error: 'channel must be sms or email' });
+    if (channel !== 'email') {
+      return res.status(400).json({ error: 'Only email OTP is supported' });
+    }
+
+    if (!isValidEmailAddress(destination)) {
+      return res.status(400).json({ error: 'A valid email address is required' });
     }
 
     const otpCode = generateOtpCode();
@@ -1490,7 +1508,7 @@ app.post('/api/kba/otp/send', requireAuth, async (req, res) => {
     );
     persistDatabase();
 
-    await sendOtpViaTwilio({ destination, channel, code: otpCode });
+    await sendOtpViaEmail({ destination, code: otpCode });
 
     return res.json({
       success: true,
@@ -1541,22 +1559,7 @@ app.post('/api/kba/otp/verify', requireAuth, async (req, res) => {
       return res.status(429).json({ error: 'Maximum OTP attempts reached. Request a new OTP.' });
     }
 
-    let verified = false;
-    const client = getTwilioClient();
-    if (client && TWILIO_VERIFY_SERVICE_SID) {
-      try {
-        const check = await client.verify.v2.services(TWILIO_VERIFY_SERVICE_SID).verificationChecks.create({
-          to: challenge.destination,
-          code: otpCode,
-        });
-        verified = check?.status === 'approved';
-      } catch (twilioErr) {
-        console.warn('⚠️ Twilio verify check failed, using local OTP hash fallback:', twilioErr?.message || twilioErr);
-        verified = hashOtpCode(otpCode) === String(challenge.otpHash || '');
-      }
-    } else {
-      verified = hashOtpCode(otpCode) === String(challenge.otpHash || '');
-    }
+    const verified = hashOtpCode(otpCode) === String(challenge.otpHash || '');
 
     if (!verified) {
       dbRun('UPDATE otp_challenges SET attempts = attempts + 1 WHERE id = :id', { id: challenge.id });

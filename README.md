@@ -1,87 +1,217 @@
 # 🔏 Digital Notarization Platform
 
-A real-time digital notarization application built with **React + Socket.io + Konva Canvas**. Two users (Document Owner & Notary) can collaborate on the same document in real-time, placing signatures and stamps with drag-and-drop functionality.
-
-## 📋 Features
-
-✅ **Real-time Collaboration**
-  - Two users see the same document simultaneously
-  - WebSocket synchronization via Socket.io
-  - Instant updates when signatures/stamps are placed
-
-✅ **Interactive Canvas**
-  - Drag & drop signatures and stamps on documents
-  - Canvas-based signature drawing (touch support)
-  - Resize and rotate signatures
-
-✅ **Two User Roles**
-  - **Document Owner**: Uploads documents, signs with their signature
-  - **Notary**: Verifies and places official stamps/signatures
-
-✅ **Screen Recording**
-  - Record the entire notarization session using WebRTC
-  - Download recordings for audit trail
-
-✅ **Document Support**
-  - PDF viewing
-  - Image preview (PNG, JPG)
+An enterprise-grade digital notarization platform with full lifecycle support:
+- Real-time collaborative document signing
+- KBA (Know-Your-Business/Know-Your-Applicant) identity verification
+- Email OTP authentication via SMTP
+- Admin KBA review and approval workflow
+- PDF and image preview plus download
+- Role-based dashboards for owners, notaries, and admins
 
 ---
 
-## 🏗️ Project Structure
+## Table of Contents
 
-```
-Notary/
-├── my-react-app/              # React Frontend
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── CanvasBoard.jsx          # Main canvas for signatures
-│   │   │   ├── PdfViewer.jsx            # PDF document viewer
-│   │   │   ├── SignaturePad.jsx         # Canvas signature drawing
-│   │   │   ├── SidebarAssets.jsx        # Draggable assets
-│   │   │   └── ScreenRecorder.jsx       # WebRTC screen recording
-│   │   ├── pages/
-│   │   │   ├── HomePage.jsx             # Role selection
-│   │   │   ├── OwnerPage.jsx            # Owner dashboard
-│   │   │   └── NotaryPage.jsx           # Notary dashboard
-│   │   ├── socket/
-│   │   │   └── socket.js                # Socket.io configuration
-│   │   ├── App.jsx
-│   │   ├── App.css
-│   │   ├── main.jsx
-│   │   └── index.css
-│   ├── package.json
-│   ├── vite.config.js
-│   └── index.html
-│
-├── server.js                  # Node backend (Socket.io server)
-└── README.md
-```
+1. [Overview](#overview)
+2. [Architecture](#architecture)
+3. [Features](#features)
+4. [Prerequisites](#prerequisites)
+5. [Installation](#installation)
+6. [Configuration](#configuration)
+7. [Running the App](#running-the-app)
+8. [SMTP (Gmail) OTP Setup](#smtp-gmail-otp-setup)
+9. [APIs and Pages](#apis-and-pages)
+10. [Troubleshooting](#troubleshooting)
+11. [Project Structure](#project-structure)
+12. [Security](#security)
+13. [Contributing](#contributing)
+14. [License](#license)
 
 ---
 
-## 🚀 Quick Start
+## Overview
 
-### Prerequisites
-- Node.js (v16+)
-- npm or yarn
+This project delivers a full digital notarization workflow for secure document collaboration, verification, and notarization using modern web technologies.
 
-### Step 1: Install Frontend Dependencies
+## Architecture
+
+- Backend: Node.js + Express + Socket.io
+- Frontend: React + Vite
+- Storage: SQLite (`sql.js` in server)
+- Email: SMTP via `nodemailer`
+- Auth: JWT in localStorage
+
+## Features
+
+- Multi-user real-time notarization sessions
+- Document upload with front/back KBA
+- Email OTP verification (Gmail/SMTP)
+- Admin review queue (approve/reject)
+- PDF/image preview and download
+- User/role management and session termination
+
+## Prerequisites
+
+- Node.js >= 18
+- npm
+
+## Installation
 
 ```bash
+git clone <REPO_URL> d:\Artesian\notary
+cd d:\Artesian\notary
+npm install
 cd my-react-app
 npm install
+cd ..
 ```
 
-### Step 2: Set Up Backend Server
+## Configuration
 
-You have two options:
+Create `.env` in project root:
 
-#### Option A: Use the provided server.js
+```env
+PORT=5001
+NODE_ENV=development
+FRONTEND_URL=http://localhost:5173
+
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=ayushartesian@gmail.com
+SMTP_PASS=<gmail-app-password>
+SMTP_FROM="Notary Platform <no-reply@yourdomain.com>"
+OTP_CHANNEL_DEFAULT=email
+OTP_TTL_MS=600000
+```
+
+### Gmail-specific
+
+1. Enable 2-step verification
+2. Create App password at https://myaccount.google.com/security
+3. Use app password in `SMTP_PASS`
+
+## Running the App
+
+### Backend
+
+```bash
+cd d:\Artesian\notary
+node server.js
+```
+
+Expected: backend starts and logs server address.
+
+### Frontend
+
+```bash
+cd d:\Artesian\notary\my-react-app
+npm run dev
+```
+
+Open: `http://localhost:5173`
+
+## SMTP (Gmail) OTP Setup
+
+Using Gmail SMTP config above, OTP flow runs as:
+1. `/api/kba/otp/send`
+2. code stored hashed in DB
+3. email delivered via nodemailer
+4. `/api/kba/otp/verify`
+
+## APIs and Pages
+
+### Important API routes
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/kba/otp/send`
+- `POST /api/kba/otp/verify`
+- `POST /api/kba/upload`
+- `GET /api/kba/status`
+- `GET /api/admin/kba/pending`
+- `GET /api/admin/kba/:userId/document`
+- `PUT /api/admin/kba/:userId/approve`
+- `PUT /api/admin/kba/:userId/reject`
+
+### Frontend pages
+- `/login`, `/register`
+- `/kba/verify`, `/kba/pending`, `/kba/rejected`
+- `/owner/doc/dashboard`, `/notary/doc/dashboard`
+- `/admin`
+
+## Troubleshooting
+
+### Frontend: socket errors
+- `ECONNREFUSED` → backend not running or incorrect port
+- `ECONNRESET` → broken connection
+
+### SMTP errors
+- `ENOTFOUND` → invalid host
+- `EAUTH` → bad creds/app password
+- Use local MailHog/smtp4dev for dev testing
+
+## Project Structure
+
+```txt
+notary/
+├── .env
+├── package.json
+├── package-lock.json
+├── README.md
+├── server.js
+├── data/
+│   ├── users.json
+│   └── notarized/
+├── scripts/
+│   └── inspect_db.js
+└── my-react-app/
+    ├── package.json
+    ├── vite.config.js
+    ├── src/
+    │   ├── App.jsx
+    │   ├── main.jsx
+    │   ├── pages/
+    │   ├── components/
+    │   ├── socket/socket.js
+    │   └── utils/apiClient.js
+    └── public/
+```
+
+## Security
+
+- Do not commit `.env`
+- Use secrets manager in production
+- Keep SMTP creds safe
+
+## Contributing
+
+1. Fork
+2. Branch
+3. PR
+
+## License
+
+MIT
+
 ```bash
 cd ..
 npm install express socket.io cors
 node server.js
+```
+
+### SMTP OTP Configuration (Email)
+
+Set these environment variables in your backend `.env` file to enable OTP over email:
+
+```env
+SMTP_HOST=smtp.your-provider.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your_smtp_username
+SMTP_PASS=your_smtp_password
+SMTP_FROM="Notary Platform <no-reply@yourdomain.com>"
+OTP_CHANNEL_DEFAULT=email
+OTP_TTL_MS=600000
 ```
 
 #### Option B: Use a hosted Socket.io server
