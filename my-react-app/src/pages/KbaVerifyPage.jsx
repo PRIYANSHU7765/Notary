@@ -40,8 +40,8 @@ const KbaVerifyPage = () => {
   const authUser = getAuthUser() || {}
   const [statusLoading, setStatusLoading] = useState(true)
   const [statusData, setStatusData] = useState(null)
-  const [otpDestination, setOtpDestination] = useState(authUser.email || authUser.phoneNumber || '')
-  const [otpChannel, setOtpChannel] = useState(authUser.email ? 'email' : 'sms')
+  const [otpDestination, setOtpDestination] = useState(authUser.email || '')
+  const [otpChannel, setOtpChannel] = useState('email')
   const [otpCode, setOtpCode] = useState('')
   const [documentType, setDocumentType] = useState('aadhaar')
   const [selectedFrontFile, setSelectedFrontFile] = useState(null)
@@ -96,22 +96,17 @@ const KbaVerifyPage = () => {
     refreshStatus()
   }, [])
 
-  const validateOtpChannelFromDestination = (value) => {
-    const trimmed = String(value || '').trim()
-    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-      return 'email'
-    }
-    if (/^[+]?\d[\d\s\-()]{8,}$/.test(trimmed)) {
-      return 'sms'
-    }
-    return ''
-  }
+  const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim())
 
   const handleSendOtp = async () => {
     setError('')
     setSuccess('')
     if (!otpDestination.trim()) {
-      setError('Phone number or email is required to send OTP')
+      setError('Email is required to send OTP')
+      return
+    }
+    if (!isValidEmail(otpDestination)) {
+      setError('Enter a valid email address')
       return
     }
 
@@ -221,27 +216,17 @@ const KbaVerifyPage = () => {
 
         <div className="kba-section">
           <h2>Step 1: Send OTP</h2>
-          <p>Send a verification code to your phone number or email.</p>
+          <p>Send a verification code to your email address.</p>
           <div className="kba-form-grid">
             <input
               className="kba-input"
               value={otpDestination}
               onChange={(event) => {
-                const value = event.target.value
-                setOtpDestination(value)
-                const autoChannel = validateOtpChannelFromDestination(value)
-                if (autoChannel) setOtpChannel(autoChannel)
+                setOtpDestination(event.target.value)
               }}
-              placeholder="+91xxxxxxxxxx or email@example.com"
+              placeholder="email@example.com"
             />
-            <select
-              className="kba-select"
-              value={otpChannel}
-              onChange={(event) => setOtpChannel(event.target.value)}
-            >
-              <option value="sms">SMS</option>
-              <option value="email">Email</option>
-            </select>
+            <input className="kba-input" value="Email OTP" readOnly />
           </div>
           <div className="kba-actions">
             <button

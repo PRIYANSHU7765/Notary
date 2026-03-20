@@ -7,7 +7,11 @@
     "start": "node server.js",
     "dev": "node server.js"
   },
-  "keywords": ["notarization", "socket.io", "real-time"],
+  "keywords": [
+    "notarization",
+    "socket.io",
+    "real-time"
+  ],
   "author": "PRIYANSHU7764",
   "email": "priyanshu.pratap@artesian.io",
   "license": "MIT",
@@ -15,11 +19,11 @@
     "node": "24.x"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "socket.io": "^4.5.4",
     "cors": "^2.8.5",
-    "sql.js": "^1.8.0",
     "dotenv": "^16.0.3",
-    "twilio": "^5.4.2"
+    "express": "^4.18.2",
+    "nodemailer": "^8.0.3",
+    "socket.io": "^4.5.4",
+    "sql.js": "^1.8.0"
   }
 }
