@@ -715,6 +715,18 @@ async function fetchKbaStatus() {
   return payload;
 }
 
+async function cancelKba() {
+  const response = await fetchWithFallback('/api/kba/cancel', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'Failed to cancel KBA');
+  return payload;
+}
+
 async function fetchPendingKbaQueue() {
   const response = await fetchWithFallback('/api/admin/kba/pending');
   const payload = await response.json().catch(() => ({}));
@@ -805,5 +817,5 @@ async function debugFetchKbaSubmissions() {
   return await response.json().catch(() => ({}));
 }
 
-export { saveSignature, fetchSignatures, deleteSignature, saveAsset, fetchAssets, deleteAsset, registerUser, loginUser, fetchUsers, fetchAdminOverview, fetchAdminUserInfo, updateAdminUser, deleteAdminUser, terminateAdminSession, saveDocument, saveOwnerDocument, fetchDocuments, fetchOwnerDocuments, fetchNotarizedDocuments, updateDocumentReview, updateOwnerDocumentReview, deleteOwnerDocument, markOwnerDocumentSessionStarted, completeOwnerDocumentNotarization, endOwnerDocumentSession, sendKbaOtp, verifyKbaOtp, uploadKbaDocument, fetchKbaStatus, fetchPendingKbaQueue, approveKbaSubmission, rejectKbaSubmission, getKbaDocumentUrl, fetchKbaDocumentAsBlob, debugFetchKbaSubmissions, API_BASE_URL };
+export { saveSignature, fetchSignatures, deleteSignature, saveAsset, fetchAssets, deleteAsset, registerUser, loginUser, fetchUsers, fetchAdminOverview, fetchAdminUserInfo, updateAdminUser, deleteAdminUser, terminateAdminSession, saveDocument, saveOwnerDocument, fetchDocuments, fetchOwnerDocuments, fetchNotarizedDocuments, updateDocumentReview, updateOwnerDocumentReview, deleteOwnerDocument, markOwnerDocumentSessionStarted, completeOwnerDocumentNotarization, endOwnerDocumentSession, sendKbaOtp, verifyKbaOtp, uploadKbaDocument, cancelKba, fetchKbaStatus, fetchPendingKbaQueue, approveKbaSubmission, rejectKbaSubmission, getKbaDocumentUrl, fetchKbaDocumentAsBlob, debugFetchKbaSubmissions, API_BASE_URL };
 

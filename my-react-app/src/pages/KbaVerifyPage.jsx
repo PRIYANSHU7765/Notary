@@ -40,8 +40,8 @@ const KbaVerifyPage = () => {
   const authUser = getAuthUser() || {}
   const [statusLoading, setStatusLoading] = useState(true)
   const [statusData, setStatusData] = useState(null)
-  const [otpDestination, setOtpDestination] = useState(authUser.phoneNumber || '')
-  const [otpChannel, setOtpChannel] = useState('sms')
+  const [otpDestination, setOtpDestination] = useState(authUser.email || authUser.phoneNumber || '')
+  const [otpChannel, setOtpChannel] = useState(authUser.email ? 'email' : 'sms')
   const [otpCode, setOtpCode] = useState('')
   const [documentType, setDocumentType] = useState('aadhaar')
   const [selectedFrontFile, setSelectedFrontFile] = useState(null)
@@ -53,6 +53,16 @@ const KbaVerifyPage = () => {
   const currentKbaStatus = useMemo(() => {
     return statusData?.user?.kbaStatus || authUser.kbaStatus || 'draft'
   }, [statusData, authUser.kbaStatus])
+
+  const isOtpAlreadyVerified = useMemo(() => {
+    const lower = String(currentKbaStatus || '').toLowerCase();
+    return lower === 'otp_verified' || lower === 'kba_approved';
+  }, [currentKbaStatus])
+
+  const isOtpPending = useMemo(() => {
+    return String(currentKbaStatus || '').toLowerCase() === 'otp_pending';
+  }, [currentKbaStatus])
+
 
   const refreshStatus = async () => {
     setStatusLoading(true)
@@ -85,6 +95,17 @@ const KbaVerifyPage = () => {
   useEffect(() => {
     refreshStatus()
   }, [])
+
+  const validateOtpChannelFromDestination = (value) => {
+    const trimmed = String(value || '').trim()
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      return 'email'
+    }
+    if (/^[+]?\d[\d\s\-()]{8,}$/.test(trimmed)) {
+      return 'sms'
+    }
+    return ''
+  }
 
   const handleSendOtp = async () => {
     setError('')
@@ -205,7 +226,12 @@ const KbaVerifyPage = () => {
             <input
               className="kba-input"
               value={otpDestination}
-              onChange={(event) => setOtpDestination(event.target.value)}
+              onChange={(event) => {
+                const value = event.target.value
+                setOtpDestination(value)
+                const autoChannel = validateOtpChannelFromDestination(value)
+                if (autoChannel) setOtpChannel(autoChannel)
+              }}
               placeholder="+91xxxxxxxxxx or email@example.com"
             />
             <select
@@ -218,8 +244,12 @@ const KbaVerifyPage = () => {
             </select>
           </div>
           <div className="kba-actions">
-            <button className="kba-btn primary" disabled={busyAction === 'send-otp'} onClick={handleSendOtp}>
-              {busyAction === 'send-otp' ? 'Sending OTP...' : 'Send OTP'}
+            <button
+              className="kba-btn primary"
+              disabled={busyAction === 'send-otp' || isOtpAlreadyVerified}
+              onClick={handleSendOtp}
+            >
+              {busyAction === 'send-otp' ? 'Sending OTP...' : isOtpAlreadyVerified ? 'OTP locked' : 'Send OTP'}
             </button>
             <button className="kba-btn ghost" onClick={refreshStatus} disabled={statusLoading}>
               Refresh Status
@@ -239,8 +269,12 @@ const KbaVerifyPage = () => {
             />
           </div>
           <div className="kba-actions">
-            <button className="kba-btn primary" disabled={busyAction === 'verify-otp'} onClick={handleVerifyOtp}>
-              {busyAction === 'verify-otp' ? 'Verifying...' : 'Verify OTP'}
+            <button
+              className="kba-btn primary"
+              disabled={busyAction === 'verify-otp' || isOtpAlreadyVerified || !isOtpPending}
+              onClick={handleVerifyOtp}
+            >
+              {busyAction === 'verify-otp' ? 'Verifying...' : isOtpAlreadyVerified ? 'Already verified' : 'Verify OTP'}
             </button>
           </div>
         </div>

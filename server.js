@@ -1363,6 +1363,14 @@ app.post('/api/auth/login', (req, res) => {
 
 app.post('/api/kba/otp/send', requireAuth, async (req, res) => {
   try {
+    const currentUser = dbGet('SELECT otpVerified, kbaStatus FROM users WHERE userId = :userId', { userId: req.auth.userId });
+    if (currentUser && Number(currentUser.otpVerified) === 1) {
+      return res.status(400).json({ error: 'OTP already verified; cannot send another OTP' });
+    }
+    if (currentUser && String(currentUser.kbaStatus || '').toLowerCase() === KBA_STATUS.PENDING_REVIEW) {
+      return res.status(400).json({ error: 'KBA submission is pending review; cannot send OTP' });
+    }
+
     const channel = String(req.body?.channel || OTP_CHANNEL_DEFAULT || 'sms').trim().toLowerCase();
     const destination = String(req.body?.destination || req.auth?.phoneNumber || '').trim();
 
@@ -1430,6 +1438,11 @@ app.post('/api/kba/otp/send', requireAuth, async (req, res) => {
 
 app.post('/api/kba/otp/verify', requireAuth, async (req, res) => {
   try {
+    const user = dbGet('SELECT otpVerified FROM users WHERE userId = :userId', { userId: req.auth.userId });
+    if (user && Number(user.otpVerified) === 1) {
+      return res.status(400).json({ error: 'OTP already verified; verification cannot be repeated' });
+    }
+
     const otpCode = String(req.body?.otp || '').trim();
     if (!otpCode) {
       return res.status(400).json({ error: 'otp is required' });
@@ -1667,6 +1680,32 @@ app.get('/api/kba/status', requireAuth, (req, res) => {
   } catch (error) {
     console.error('Error fetching KBA status:', error);
     return res.status(500).json({ error: 'Failed to fetch KBA status' });
+  }
+});
+
+app.post('/api/kba/cancel', requireAuth, (req, res) => {
+  try {
+    const nowMs = now();
+    dbRun(
+      `UPDATE users
+       SET kbaStatus = :kbaStatus,
+           kbaRejectedReason = NULL,
+           kbaUpdatedAt = :kbaUpdatedAt
+       WHERE userId = :userId`,
+      {
+        userId: req.auth.userId,
+        kbaStatus: KBA_STATUS.DRAFT,
+        kbaUpdatedAt: nowMs,
+      }
+    );
+
+    dbRun('DELETE FROM kba_submissions WHERE userId = :userId', { userId: req.auth.userId });
+    persistDatabase();
+
+    return res.json({ success: true, userId: req.auth.userId, kbaStatus: KBA_STATUS.DRAFT });
+  } catch (error) {
+    console.error('Error cancelling KBA:', error);
+    return res.status(500).json({ error: 'Failed to cancel KBA' });
   }
 });
 

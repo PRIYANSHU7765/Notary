@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchKbaStatus } from '../utils/apiClient'
+import { fetchKbaStatus, cancelKba } from '../utils/apiClient'
 import './KbaFlow.css'
 
 const AUTH_STORAGE_KEY = 'notary.authUser'
@@ -47,6 +47,7 @@ const KbaPendingPage = () => {
   const authUser = getAuthUser() || {}
   const [statusData, setStatusData] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [busyCancel, setBusyCancel] = useState(false)
   const [error, setError] = useState('')
 
   const refreshStatus = async () => {
@@ -102,8 +103,23 @@ const KbaPendingPage = () => {
           <button className="kba-btn primary" onClick={refreshStatus} disabled={busy}>
             {busy ? 'Checking...' : 'Check Status'}
           </button>
-          <button className="kba-btn secondary" onClick={() => navigate('/kba/verify')}>
-            Back to Verification
+          <button
+            className="kba-btn secondary"
+            onClick={async () => {
+              setError('')
+              setBusyCancel(true)
+              try {
+                await cancelKba()
+                navigate('/kba/verify')
+              } catch (cancelError) {
+                setError(cancelError?.message || 'Failed to cancel KBA')
+              } finally {
+                setBusyCancel(false)
+              }
+            }}
+            disabled={busy || busyCancel}
+          >
+            {busyCancel ? 'Cancelling...' : 'Cancel KBA'}
           </button>
         </div>
       </div>
