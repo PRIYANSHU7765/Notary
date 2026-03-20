@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { saveOwnerDocument, fetchOwnerDocuments, deleteOwnerDocument } from "../utils/apiClient";
+import { saveOwnerDocument, fetchOwnerDocuments, deleteOwnerDocument, payOwnerDocumentSession } from "../utils/apiClient";
 import { base64ToUint8Array } from "../utils/pdfUtils";
 import socket from "../socket/socket";
 import PdfViewer from "../components/PdfViewer";
@@ -98,6 +98,7 @@ const STATUS_COLORS = {
   pending_review: { bg: "#fff7ed", color: "#92400e" },
   accepted: { bg: "#d1fae5", color: "#065f46" },
   session_started: { bg: "#cfe2ff", color: "#0a4e9b" },
+  payment_pending: { bg: "#fff4e5", color: "#9a3412" },
   notarized: { bg: "#d1e7dd", color: "#0f5132" },
   rejected: { bg: "#fee2e2", color: "#991b1b" },
 };
@@ -636,6 +637,10 @@ const OwnerDashboardPage = () => {
             const nextReviewedAt = backendDoc.notaryReviewedAt || doc.notaryReviewedAt;
             const nextSessionId = backendDoc.sessionId || doc.sessionId;
             const nextScheduledAt = backendDoc.scheduledAt || doc.scheduledAt;
+            const nextSessionAmount = backendDoc.sessionAmount ?? doc.sessionAmount;
+            const nextPaymentStatus = backendDoc.paymentStatus || doc.paymentStatus;
+            const nextPaymentRequestedAt = backendDoc.paymentRequestedAt || doc.paymentRequestedAt;
+            const nextPaymentPaidAt = backendDoc.paymentPaidAt || doc.paymentPaidAt;
 
             if (
               nextStatus !== doc.status ||
@@ -643,7 +648,11 @@ const OwnerDashboardPage = () => {
               nextName !== doc.notaryName ||
               nextReviewedAt !== doc.notaryReviewedAt ||
               nextSessionId !== doc.sessionId ||
-              nextScheduledAt !== doc.scheduledAt
+              nextScheduledAt !== doc.scheduledAt ||
+              nextSessionAmount !== doc.sessionAmount ||
+              nextPaymentStatus !== doc.paymentStatus ||
+              nextPaymentRequestedAt !== doc.paymentRequestedAt ||
+              nextPaymentPaidAt !== doc.paymentPaidAt
             ) {
               changed = true;
               console.log(`✅ [OWNER] Polling: Updated doc ${doc.id} status to ${nextStatus}`);
@@ -655,6 +664,10 @@ const OwnerDashboardPage = () => {
                 notaryReviewedAt: nextReviewedAt,
                 sessionId: nextSessionId,
                 scheduledAt: nextScheduledAt,
+                sessionAmount: nextSessionAmount,
+                paymentStatus: nextPaymentStatus,
+                paymentRequestedAt: nextPaymentRequestedAt,
+                paymentPaidAt: nextPaymentPaidAt,
               };
             }
 
@@ -720,12 +733,22 @@ const OwnerDashboardPage = () => {
     socket.on("documentReviewUpdated", onDocumentReviewUpdated);
 
     const onDocumentNotarized = (data) => {
-      const { documentId, status } = data || {};
+      const { documentId, status, sessionAmount, paymentStatus, paymentRequestedAt, paymentPaidAt } = data || {};
       if (!documentId) return;
       console.log(`✅ [OWNER] Received documentNotarized: ${documentId} (status: ${status})`);
       setDocs((prevDocs) => {
         const nextDocs = prevDocs.map((doc) =>
-          doc.id === documentId ? { ...doc, status: status || doc.status, notarized: true } : doc
+          doc.id === documentId
+            ? {
+                ...doc,
+                status: status || doc.status,
+                notarized: String(status || '').toLowerCase() === 'notarized',
+                sessionAmount: sessionAmount ?? doc.sessionAmount,
+                paymentStatus: paymentStatus || doc.paymentStatus,
+                paymentRequestedAt: paymentRequestedAt || doc.paymentRequestedAt,
+                paymentPaidAt: paymentPaidAt || doc.paymentPaidAt,
+              }
+            : doc
         );
         saveDocs(nextDocs);
         return nextDocs;
@@ -1151,6 +1174,26 @@ const OwnerDashboardPage = () => {
 
   const handleNotarize = (doc) => {
     setNotarizingDoc(doc);
+  };
+
+  const handlePaySessionAmount = async (doc) => {
+    try {
+      await payOwnerDocumentSession(doc.id, {
+        transactionId: `local-${Date.now()}`,
+        paymentMethod: 'local_mock',
+      });
+
+      const latestDocs = await fetchOwnerDocuments({ ownerId: authUser.userId });
+      if (Array.isArray(latestDocs)) {
+        setDocs(latestDocs);
+        saveDocs(latestDocs);
+      }
+
+      alert(`Payment completed for ${doc.name}. Notary can now end the session.`);
+    } catch (error) {
+      console.error('Failed to process payment:', error);
+      alert(error?.message || 'Failed to process payment');
+    }
   };
 
   const handleConfirmNotarize = async () => {
@@ -1808,6 +1851,8 @@ const OwnerDashboardPage = () => {
                   ? 'notarized'
                   : rawStatus === 'session_started'
                   ? 'session_started'
+                  : rawStatus === 'payment_pending'
+                  ? 'payment_pending'
                   : rawStatus === 'accepted' || review === 'accepted'
                   ? 'accepted'
                   : rawStatus === 'rejected' || review === 'rejected'
@@ -1824,6 +1869,7 @@ const OwnerDashboardPage = () => {
               const showJoinButton =
                 status === 'session_started' &&
                 Boolean(hasDocumentSession);
+              const showPayButton = status === 'payment_pending' && Number(doc.sessionAmount || 0) > 0 && String(doc.paymentStatus || '').toLowerCase() !== 'paid';
 
               const displayStatus =
                 status === 'uploaded'
@@ -1834,6 +1880,8 @@ const OwnerDashboardPage = () => {
                   ? 'Accepted — waiting for session'
                   : status === 'session_started'
                   ? 'Session started'
+                  : status === 'payment_pending'
+                  ? 'Payment pending'
                   : status === 'notarized'
                   ? 'Notarized'
                   : status === 'rejected'
@@ -1959,6 +2007,23 @@ const OwnerDashboardPage = () => {
                       onMouseLeave={(e) => (e.currentTarget.style.background = "#10b981")}
                     >
                       {previousSessions[doc.id] || activeSessions[doc.id] ? "Continue session" : "Join Session"}
+                    </button>
+                  ) : showPayButton ? (
+                    <button
+                      onClick={() => handlePaySessionAmount(doc)}
+                      style={{
+                        background: "#2563eb",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: "8px",
+                        padding: "8px 16px",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                      }}
+                      title={`Pay ${Number(doc.sessionAmount || 0).toFixed(2)} to continue`}
+                    >
+                      Pay {Number(doc.sessionAmount || 0).toFixed(2)}
                     </button>
                   ) : (
                     <span style={{ fontSize: "12px", color: "#9ca3af" }}>

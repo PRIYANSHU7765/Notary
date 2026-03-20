@@ -262,7 +262,14 @@ CREATE TABLE IF NOT EXISTS owner_documents (
   notaryName TEXT,
   notaryReview TEXT DEFAULT 'pending',
   notaryReviewedAt INTEGER,
-  status TEXT NOT NULL DEFAULT 'uploaded'
+  status TEXT NOT NULL DEFAULT 'uploaded',
+  sessionAmount REAL NOT NULL DEFAULT 0,
+  paymentStatus TEXT NOT NULL DEFAULT 'not_required',
+  paymentRequestedAt INTEGER,
+  paymentRequestedBy TEXT,
+  paymentPaidAt INTEGER,
+  paymentTransactionId TEXT,
+  paymentMethod TEXT
 );
 `;
 
@@ -450,6 +457,34 @@ function ensureOwnerDocumentsSchema() {
     if (!columns.includes('scheduledAt')) {
       console.log('🔧 Adding missing owner_documents.scheduledAt column');
       db.exec("ALTER TABLE owner_documents ADD COLUMN scheduledAt INTEGER;");
+    }
+    if (!columns.includes('sessionAmount')) {
+      console.log('🔧 Adding missing owner_documents.sessionAmount column');
+      db.exec("ALTER TABLE owner_documents ADD COLUMN sessionAmount REAL NOT NULL DEFAULT 0;");
+    }
+    if (!columns.includes('paymentStatus')) {
+      console.log('🔧 Adding missing owner_documents.paymentStatus column');
+      db.exec("ALTER TABLE owner_documents ADD COLUMN paymentStatus TEXT NOT NULL DEFAULT 'not_required';");
+    }
+    if (!columns.includes('paymentRequestedAt')) {
+      console.log('🔧 Adding missing owner_documents.paymentRequestedAt column');
+      db.exec("ALTER TABLE owner_documents ADD COLUMN paymentRequestedAt INTEGER;");
+    }
+    if (!columns.includes('paymentRequestedBy')) {
+      console.log('🔧 Adding missing owner_documents.paymentRequestedBy column');
+      db.exec("ALTER TABLE owner_documents ADD COLUMN paymentRequestedBy TEXT;");
+    }
+    if (!columns.includes('paymentPaidAt')) {
+      console.log('🔧 Adding missing owner_documents.paymentPaidAt column');
+      db.exec("ALTER TABLE owner_documents ADD COLUMN paymentPaidAt INTEGER;");
+    }
+    if (!columns.includes('paymentTransactionId')) {
+      console.log('🔧 Adding missing owner_documents.paymentTransactionId column');
+      db.exec("ALTER TABLE owner_documents ADD COLUMN paymentTransactionId TEXT;");
+    }
+    if (!columns.includes('paymentMethod')) {
+      console.log('🔧 Adding missing owner_documents.paymentMethod column');
+      db.exec("ALTER TABLE owner_documents ADD COLUMN paymentMethod TEXT;");
     }
 
     // Normalize legacy rows from earlier workflow bug where accepted docs were marked notarized.
@@ -2739,9 +2774,12 @@ app.put('/api/documents/:id/review', (req, res) => {
 app.put('/api/owner-documents/:id/notarize', requireAuth, requireRole(['notary']), requireKbaApproved, (req, res) => {
   try {
     const { id } = req.params;
-    const { notaryName, notarizedDataUrl } = req.body;
+    const { notaryName, notarizedDataUrl, sessionAmount } = req.body;
 
     const nowMs = now();
+    const parsedAmount = Number(sessionAmount);
+    const normalizedAmount = Number.isFinite(parsedAmount) && parsedAmount >= 0 ? Number(parsedAmount.toFixed(2)) : 0;
+    const paymentRequired = normalizedAmount > 0;
 
     // If a notarized PDF is provided, save it to disk and store path in DB.
     let notarizedPath = null;
@@ -2765,22 +2803,38 @@ app.put('/api/owner-documents/:id/notarize', requireAuth, requireRole(['notary']
       `
       UPDATE owner_documents
       SET status = :status,
-          inProcess = 0,
-          notarized = 1,
+          inProcess = :inProcess,
+          notarized = :notarized,
           notarizedAt = :notarizedAt,
           notaryReview = 'accepted',
           notaryName = :notaryName,
           notarizedDataUrl = :notarizedDataUrl,
-          notarizedPath = :notarizedPath
+          notarizedPath = :notarizedPath,
+          sessionAmount = :sessionAmount,
+          paymentStatus = :paymentStatus,
+          paymentRequestedAt = :paymentRequestedAt,
+          paymentRequestedBy = :paymentRequestedBy,
+          paymentPaidAt = :paymentPaidAt,
+          paymentTransactionId = :paymentTransactionId,
+          paymentMethod = :paymentMethod
       WHERE id = :id
     `,
       {
         id,
-        status: 'notarized',
-        notarizedAt: nowMs,
+        status: paymentRequired ? 'payment_pending' : 'notarized',
+        inProcess: paymentRequired ? 1 : 0,
+        notarized: paymentRequired ? 0 : 1,
+        notarizedAt: paymentRequired ? null : nowMs,
         notaryName: notaryName || 'Unknown Notary',
         notarizedDataUrl: notarizedDataUrl || null,
         notarizedPath,
+        sessionAmount: normalizedAmount,
+        paymentStatus: paymentRequired ? 'pending' : 'not_required',
+        paymentRequestedAt: paymentRequired ? nowMs : null,
+        paymentRequestedBy: paymentRequired ? req.auth.userId : null,
+        paymentPaidAt: null,
+        paymentTransactionId: null,
+        paymentMethod: null,
       }
     );
     persistDatabase();
@@ -2792,6 +2846,7 @@ app.put('/api/owner-documents/:id/notarize', requireAuth, requireRole(['notary']
 
     io.emit('documentNotarized', {
       id: document.id,
+      documentId: document.id,
       sessionId: document.sessionId,
       ownerId: document.ownerId,
       ownerName: document.ownerName,
@@ -2801,10 +2856,26 @@ app.put('/api/owner-documents/:id/notarize', requireAuth, requireRole(['notary']
       uploadedAt: document.uploadedAt,
       notarized: Boolean(document.notarized),
       status: document.status,
+      sessionAmount: Number(document.sessionAmount || 0),
+      paymentStatus: document.paymentStatus || 'not_required',
+      paymentRequestedAt: document.paymentRequestedAt,
+      paymentPaidAt: document.paymentPaidAt,
       notaryReview: document.notaryReview,
       notaryReviewedAt: document.notaryReviewedAt,
       notaryName: document.notaryName,
     });
+
+    if (paymentRequired) {
+      io.emit('documentPaymentRequested', {
+        documentId: document.id,
+        sessionId: document.sessionId,
+        ownerId: document.ownerId,
+        sessionAmount: Number(document.sessionAmount || 0),
+        paymentStatus: document.paymentStatus || 'pending',
+        paymentRequestedAt: document.paymentRequestedAt,
+        notaryName: document.notaryName,
+      });
+    }
 
     res.json(document);
   } catch (error) {
@@ -2849,8 +2920,8 @@ app.post('/api/owner-documents', requireAuth, requireRole(['owner']), requireKba
 
     dbRun(
       `
-      INSERT INTO owner_documents (id, ownerId, ownerName, sessionId, name, size, type, dataUrl, uploadedAt, inProcess, notarized, notarizedAt, notaryId, notaryName, notaryReview, notaryReviewedAt, status)
-      VALUES (:id, :ownerId, :ownerName, :sessionId, :name, :size, :type, :dataUrl, :uploadedAt, :inProcess, :notarized, :notarizedAt, :notaryId, :notaryName, :notaryReview, :notaryReviewedAt, :status)
+      INSERT INTO owner_documents (id, ownerId, ownerName, sessionId, name, size, type, dataUrl, uploadedAt, inProcess, notarized, notarizedAt, notaryId, notaryName, notaryReview, notaryReviewedAt, status, sessionAmount, paymentStatus, paymentRequestedAt, paymentRequestedBy, paymentPaidAt, paymentTransactionId, paymentMethod)
+      VALUES (:id, :ownerId, :ownerName, :sessionId, :name, :size, :type, :dataUrl, :uploadedAt, :inProcess, :notarized, :notarizedAt, :notaryId, :notaryName, :notaryReview, :notaryReviewedAt, :status, :sessionAmount, :paymentStatus, :paymentRequestedAt, :paymentRequestedBy, :paymentPaidAt, :paymentTransactionId, :paymentMethod)
       ON CONFLICT(id) DO UPDATE SET
         ownerId = excluded.ownerId,
         ownerName = excluded.ownerName,
@@ -2867,7 +2938,14 @@ app.post('/api/owner-documents', requireAuth, requireRole(['owner']), requireKba
         notaryName = excluded.notaryName,
         notaryReview = excluded.notaryReview,
         notaryReviewedAt = excluded.notaryReviewedAt,
-        status = excluded.status
+        status = excluded.status,
+        sessionAmount = excluded.sessionAmount,
+        paymentStatus = excluded.paymentStatus,
+        paymentRequestedAt = excluded.paymentRequestedAt,
+        paymentRequestedBy = excluded.paymentRequestedBy,
+        paymentPaidAt = excluded.paymentPaidAt,
+        paymentTransactionId = excluded.paymentTransactionId,
+        paymentMethod = excluded.paymentMethod
     `,
       {
         id,
@@ -2887,6 +2965,13 @@ app.post('/api/owner-documents', requireAuth, requireRole(['owner']), requireKba
         notaryReview: normalizedStatus === 'pending_review' ? 'pending' : normalizedStatus === 'accepted' ? 'accepted' : 'pending',
         notaryReviewedAt: null,
         status: normalizedStatus,
+        sessionAmount: 0,
+        paymentStatus: 'not_required',
+        paymentRequestedAt: null,
+        paymentRequestedBy: null,
+        paymentPaidAt: null,
+        paymentTransactionId: null,
+        paymentMethod: null,
       }
     );
     persistDatabase();
@@ -3100,9 +3185,50 @@ app.put('/api/owner-documents/:id/session-ended', requireAuth, requireRole(['not
       return res.status(404).json({ error: 'Owner document not found' });
     }
 
+    const amountDue = Number(existing.sessionAmount || 0);
+    const paymentStatus = String(existing.paymentStatus || 'not_required').trim().toLowerCase();
+    if (amountDue > 0 && paymentStatus !== 'paid') {
+      return res.status(409).json({
+        error: 'Owner payment is pending. End session is blocked until payment is completed.',
+        paymentRequired: true,
+        paymentStatus,
+        amountDue,
+      });
+    }
+
     let document = existing;
 
-    if (String(existing.status || '').trim().toLowerCase() !== 'notarized' && !existing.notarized) {
+    const currentStatus = String(existing.status || '').trim().toLowerCase();
+    if (currentStatus === 'payment_pending' && paymentStatus === 'paid') {
+      const nowMs = now();
+      dbRun(
+        `
+        UPDATE owner_documents
+        SET status = :status,
+            inProcess = :inProcess,
+            notarized = :notarized,
+            notarizedAt = :notarizedAt,
+            notaryReview = :notaryReview,
+            notaryReviewedAt = :notaryReviewedAt,
+            notaryName = :notaryName,
+            notaryId = :notaryId
+        WHERE id = :id
+      `,
+        {
+          id,
+          status: 'notarized',
+          inProcess: 0,
+          notarized: 1,
+          notarizedAt: nowMs,
+          notaryReview: 'accepted',
+          notaryReviewedAt: nowMs,
+          notaryName: notaryName || existing.notaryName || 'Unknown Notary',
+          notaryId: notaryUserId || existing.notaryId || null,
+        }
+      );
+      persistDatabase();
+      document = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+    } else if (currentStatus !== 'notarized' && !existing.notarized) {
       const nowMs = now();
       dbRun(
         `
@@ -3147,6 +3273,8 @@ app.put('/api/owner-documents/:id/session-ended', requireAuth, requireRole(['not
       documentId: document.id,
       sessionId: document.sessionId || sessionId || null,
       status: document.status,
+      sessionAmount: Number(document.sessionAmount || 0),
+      paymentStatus: document.paymentStatus || 'not_required',
       notaryName: document.notaryName || notaryName || 'Unknown Notary',
       notaryUserId: document.notaryId || notaryUserId || null,
       endedAt: new Date().toISOString(),
@@ -3225,6 +3353,68 @@ app.put('/api/owner-documents/:id/review', requireAuth, requireRole(['notary']),
   } catch (error) {
     console.error('Error updating owner document review:', error);
     res.status(500).json({ error: 'Failed to update owner document review' });
+  }
+});
+
+app.put('/api/owner-documents/:id/pay', requireAuth, requireRole(['owner']), requireKbaApproved, (req, res) => {
+  try {
+    const { id } = req.params;
+    const { transactionId, paymentMethod } = req.body || {};
+
+    const existing = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+    if (!existing) {
+      return res.status(404).json({ error: 'Owner document not found' });
+    }
+    if (String(existing.ownerId || '') !== String(req.auth.userId)) {
+      return res.status(403).json({ error: 'Forbidden: you can only pay for your own document sessions' });
+    }
+
+    const amountDue = Number(existing.sessionAmount || 0);
+    if (amountDue <= 0) {
+      return res.status(400).json({ error: 'No payment is required for this session' });
+    }
+
+    const currentPaymentStatus = String(existing.paymentStatus || '').trim().toLowerCase();
+    if (currentPaymentStatus === 'paid') {
+      return res.json(existing);
+    }
+
+    const nowMs = now();
+    dbRun(
+      `
+      UPDATE owner_documents
+      SET paymentStatus = :paymentStatus,
+          paymentPaidAt = :paymentPaidAt,
+          paymentTransactionId = :paymentTransactionId,
+          paymentMethod = :paymentMethod
+      WHERE id = :id
+    `,
+      {
+        id,
+        paymentStatus: 'paid',
+        paymentPaidAt: nowMs,
+        paymentTransactionId: String(transactionId || `local-${nowMs}`).trim(),
+        paymentMethod: String(paymentMethod || 'local_mock').trim(),
+      }
+    );
+    persistDatabase();
+
+    const updated = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+
+    io.emit('ownerPaymentCompleted', {
+      documentId: updated.id,
+      sessionId: updated.sessionId,
+      ownerId: updated.ownerId,
+      amountPaid: Number(updated.sessionAmount || 0),
+      paymentStatus: updated.paymentStatus || 'paid',
+      paymentPaidAt: updated.paymentPaidAt,
+      paymentTransactionId: updated.paymentTransactionId,
+    });
+
+    return res.json(updated);
+  } catch (error) {
+    console.error('Error processing owner session payment:', error);
+    return res.status(500).json({ error: 'Failed to process payment' });
   }
 });
 

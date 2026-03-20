@@ -60,6 +60,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   const [sessionStatus, setSessionStatus] = useState(null);
   const [uploadedAssets, setUploadedAssets] = useState([]);
   const [uploadedAsset, setUploadedAsset] = useState(null);
+  const [sessionAmount, setSessionAmount] = useState('0');
   const [isAssetBoxMode, setIsAssetBoxMode] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [toastType, setToastType] = useState("info");
@@ -230,6 +231,12 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       socket.on("documentShared", onDocumentShared);
       socket.on("ownerLeftSession", onOwnerLeftSession);
       socket.on("adminSessionTerminated", onAdminSessionTerminated);
+      const onOwnerPaymentCompleted = (data) => {
+        if (!data?.documentId || !documentId) return;
+        if (String(data.documentId) !== String(documentId)) return;
+        showToast(`Payment received: ${Number(data.amountPaid || 0).toFixed(2)}. You can now end the session.`, 'success', 4200);
+      };
+      socket.on('ownerPaymentCompleted', onOwnerPaymentCompleted);
 
       console.log('📡 [NOTARY] Joining session:', {roomId: sessionId, role: 'notary', userId: authUser.userId});
       socket.emit("joinSession", {
@@ -300,6 +307,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         socket.off("sessionStatus", onSessionStatus);
         socket.off("ownerLeftSession", onOwnerLeftSession);
         socket.off("adminSessionTerminated", onAdminSessionTerminated);
+        socket.off('ownerPaymentCompleted', onOwnerPaymentCompleted);
       };
     }
   }, [sessionJoined, sessionId]);
@@ -377,7 +385,12 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
           authUser.userId
         );
       } catch (error) {
-        console.warn('Failed to persist session end:', error?.message || error);
+        const message = error?.message || 'Failed to end session';
+        if (String(message).toLowerCase().includes('payment') || String(message).toLowerCase().includes('pending')) {
+          showToast(message, 'error', 4200);
+          return;
+        }
+        console.warn('Failed to persist session end:', message);
       }
     }
 
@@ -434,6 +447,12 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
     })();
 
     let notarizedDataUrl = null;
+    const parsedAmount = Number(sessionAmount);
+    const normalizedAmount = Number.isFinite(parsedAmount) && parsedAmount >= 0 ? Number(parsedAmount.toFixed(2)) : 0;
+    if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
+      showToast('Enter a valid non-negative session amount.', 'error');
+      return;
+    }
     if (pdfDataUrl) {
       try {
         const bytes = await generateNotarizedPdfBytes(pdfDataUrl, elements, {
@@ -456,10 +475,15 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       await completeOwnerDocumentNotarization(
         targetDocumentId,
         authUser.username || 'Notary',
-        notarizedDataUrl
+        notarizedDataUrl,
+        normalizedAmount
       );
       console.log('✅ Notarization marked complete for', targetDocumentId);
-      showToast('✅ Document notarized successfully!', 'success');
+      if (normalizedAmount > 0) {
+        showToast(`✅ Document marked. Waiting for owner payment of ${normalizedAmount.toFixed(2)}.`, 'info', 4200);
+      } else {
+        showToast('✅ Document notarized successfully!', 'success');
+      }
     } catch (error) {
       console.error('❌ Failed to mark document notarized:', error);
       showToast('Failed to mark document notarized. Please try again.', 'error');
@@ -687,6 +711,21 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
               >
                 Mark Notarized
               </button>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={sessionAmount}
+                onChange={(e) => setSessionAmount(e.target.value)}
+                style={{
+                  width: '120px',
+                  padding: '6px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  fontSize: '12px',
+                }}
+                title="Session amount to be paid by owner before session end"
+              />
               <button
                 onClick={handleEndSession}
                 style={{

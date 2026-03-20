@@ -611,13 +611,16 @@ async function markOwnerDocumentSessionStarted(documentId, sessionId, notaryName
   }
 }
 
-async function completeOwnerDocumentNotarization(documentId, notaryName, notarizedDataUrl) {
+async function completeOwnerDocumentNotarization(documentId, notaryName, notarizedDataUrl, sessionAmount) {
   try {
     const url = `/api/owner-documents/${documentId}/notarize`;
     console.log('[completeOwnerDocumentNotarization] Notarizing:', documentId);
 
     const payload = { notaryName };
     if (notarizedDataUrl) payload.notarizedDataUrl = notarizedDataUrl;
+    if (sessionAmount !== undefined && sessionAmount !== null && sessionAmount !== '') {
+      payload.sessionAmount = Number(sessionAmount);
+    }
 
     const response = await fetchWithFallback(url, {
       method: 'PUT',
@@ -637,6 +640,29 @@ async function completeOwnerDocumentNotarization(documentId, notaryName, notariz
     return responseData;
   } catch (error) {
     console.error('[completeOwnerDocumentNotarization] ❌ Error:', error);
+    throw error;
+  }
+}
+
+async function payOwnerDocumentSession(documentId, paymentPayload = {}) {
+  try {
+    const url = `/api/owner-documents/${documentId}/pay`;
+    const response = await fetchWithFallback(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(paymentPayload),
+    });
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(result.error || 'Failed to complete payment');
+    }
+
+    return result;
+  } catch (error) {
+    console.error('[payOwnerDocumentSession] ❌ Error:', error);
     throw error;
   }
 }
@@ -836,6 +862,7 @@ export {
   deleteOwnerDocument,
   markOwnerDocumentSessionStarted,
   completeOwnerDocumentNotarization,
+  payOwnerDocumentSession,
   endOwnerDocumentSession,
   sendKbaOtp,
   verifyKbaOtp,
