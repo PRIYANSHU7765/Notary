@@ -1,5 +1,13 @@
 [
   {
+    "userId": "cde72725-5eef-4bc2-b119-d4cf8b346581",
+    "username": "user789",
+    "email": "user789@gmail.com",
+    "passwordHash": "f83000ce231e4178c9e3523e3d8e9d61:c569c1178e4d1755d7e8cde04350044de204b6da0852d8b136d7a329f9cc089ed7415411e7a79242eb1c8416f4938f8a62b41ffdea47d5dfe790e4a14691c20b",
+    "role": "owner",
+    "createdAt": "2026-03-20T06:36:40.029Z"
+  },
+  {
     "userId": "26f326c9-6462-45bc-9270-bca34eabd123",
     "username": "ayush1234",
     "email": "ayush12artesian@gmail.com",
@@ -19,7 +27,7 @@
     "userId": "admin-seed-001",
     "username": "admin",
     "email": "admin@notary.local",
-    "passwordHash": "f9d1ca98e076ff1162a81fe8298bdbf8:6d75a6a6ca3b036fb354a64275f9959162b61d03de7e7b612c2a8f6bd5e98d0eb0ed44aedcc1d27ab2f2c60a143bcee126f8c010d1b73140bfd94dac247cb2cc",
+    "passwordHash": "85507718775f1df9d6c0cafaeb216a58:27b85ba93f1084a3ee41d662d1abdee8869e7fda7c4ae73cf3e9ec95103a2be11c77e2d667c6bee632b1c322be16eb4f2dc6720146d1042c3f9a89b9c7a35e46",
     "role": "admin",
     "createdAt": "2026-03-19T12:26:06.121Z"
   },
