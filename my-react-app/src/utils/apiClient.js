@@ -5,14 +5,15 @@ const configuredApiBaseUrl =
   import.meta.env.VITE_API_BASE_URL;
 
 const isDev = Boolean(import.meta.env.DEV);
+const API_BASE_STORAGE_KEY = 'notary.apiBaseUrl';
 const API_BASE_CANDIDATES = [
   configuredApiBaseUrl,
-  ...(isDev
-    ? ['http://localhost:5001', 'http://localhost:5002', 'http://localhost:5000']
-    : []),
-].filter(Boolean);
+  ...(isDev ? ['', 'http://localhost:5001', 'http://localhost:5002', 'http://localhost:5000'] : []),
+].filter((v) => v !== undefined && v !== null); // keep '' in the list
 
-let lastWorkingApiBaseUrl = API_BASE_CANDIDATES[0];
+let lastWorkingApiBaseUrl =
+  (typeof window !== 'undefined' && window.localStorage.getItem(API_BASE_STORAGE_KEY)) ||
+  API_BASE_CANDIDATES[0];
 
 const getBaseUrlPriority = () => {
   const ordered = [lastWorkingApiBaseUrl, ...API_BASE_CANDIDATES];
@@ -26,12 +27,42 @@ async function fetchWithFallback(path, options = {}) {
     try {
       const response = await fetch(`${baseUrl}${path}`, options);
       lastWorkingApiBaseUrl = baseUrl;
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(API_BASE_STORAGE_KEY, baseUrl);
+      }
       return response;
     } catch (error) {
       networkError = error;
     }
   }
 
+  throw networkError || new Error('Unable to connect to backend server');
+}
+
+async function fetchWithNotFoundFallback(path, options = {}) {
+  let networkError = null;
+  let lastNotFoundResponse = null;
+
+  for (const baseUrl of getBaseUrlPriority()) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, options);
+
+      if (response.status === 404) {
+        lastNotFoundResponse = response;
+        continue;
+      }
+
+      lastWorkingApiBaseUrl = baseUrl;
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(API_BASE_STORAGE_KEY, baseUrl);
+      }
+      return response;
+    } catch (error) {
+      networkError = error;
+    }
+  }
+
+  if (lastNotFoundResponse) return lastNotFoundResponse;
   throw networkError || new Error('Unable to connect to backend server');
 }
 
@@ -89,6 +120,75 @@ async function fetchUsers() {
   }
 }
 
+async function fetchAdminOverview() {
+  const response = await fetchWithFallback('/api/admin/overview');
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(payload.error || 'Failed to fetch admin overview');
+  }
+
+  return payload;
+}
+
+async function fetchAdminUserInfo(userId) {
+  const response = await fetchWithNotFoundFallback(`/api/admin/users/${encodeURIComponent(userId)}`);
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(payload.error || 'Failed to fetch user details');
+  }
+
+  return payload;
+}
+
+async function updateAdminUser(userId, userData) {
+  const response = await fetchWithNotFoundFallback(`/api/admin/users/${encodeURIComponent(userId)}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(userData),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Failed to update user');
+  }
+
+  return payload;
+}
+
+async function deleteAdminUser(userId) {
+  const response = await fetchWithNotFoundFallback(`/api/admin/users/${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Failed to delete user');
+  }
+
+  return payload;
+}
+
+async function terminateAdminSession(sessionId, payload = {}) {
+  const response = await fetchWithNotFoundFallback(`/api/admin/sessions/${encodeURIComponent(sessionId)}/terminate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to terminate session');
+  }
+
+  return result;
+}
+
 async function saveSignature(signatureData) {
   try {
     const url = '/api/signatures';
@@ -119,9 +219,14 @@ async function saveSignature(signatureData) {
   }
 }
 
-async function fetchSignatures(userRole) {
+async function fetchSignatures(userRole, { sessionId, userId } = {}) {
   try {
-    const url = `/api/signatures/${userRole}`;
+    const params = new URLSearchParams();
+    if (sessionId) params.append('sessionId', sessionId);
+    if (userId) params.append('userId', userId);
+
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const url = `/api/signatures/${userRole}${query}`;
     console.log('[fetchSignatures] Fetching from:', url);
 
     const response = await fetchWithFallback(url);
@@ -164,6 +269,77 @@ async function deleteSignature(signatureId) {
   }
 }
 
+async function saveAsset(assetData) {
+  try {
+    const url = '/api/assets';
+    console.log('[saveAsset] Sending asset:', { id: assetData.id, name: assetData.name, type: assetData.type });
+
+    const response = await fetchWithFallback(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(assetData),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    console.log('[saveAsset] ✅ Saved:', responseData.id);
+    return responseData;
+  } catch (error) {
+    console.error('[saveAsset] ❌ Error:', error);
+    throw error;
+  }
+}
+
+async function fetchAssets(userRole, { sessionId, userId } = {}) {
+  try {
+    const params = new URLSearchParams();
+    if (sessionId) params.append('sessionId', sessionId);
+    if (userId) params.append('userId', userId);
+
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const url = `/api/assets/${userRole}${query}`;
+    console.log('[fetchAssets] Fetching from:', url);
+
+    const response = await fetchWithFallback(url);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: Failed to fetch assets`);
+    }
+
+    const responseData = await response.json();
+    console.log('[fetchAssets] ✅ Got', responseData.length, 'assets');
+    return responseData;
+  } catch (error) {
+    console.error('[fetchAssets] ❌ Error:', error);
+    return [];
+  }
+}
+
+async function deleteAsset(assetId) {
+  try {
+    const url = `/api/assets/${assetId}`;
+    console.log('[deleteAsset] Deleting:', assetId);
+
+    const response = await fetchWithFallback(url, { method: 'DELETE' });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    console.log('[deleteAsset] ✅ Deleted');
+    return responseData;
+  } catch (error) {
+    console.error('[deleteAsset] ❌ Error:', error);
+    throw error;
+  }
+}
+
 async function saveDocument(documentData) {
   try {
     const url = '/api/documents';
@@ -191,9 +367,93 @@ async function saveDocument(documentData) {
   }
 }
 
-async function fetchNotarizedDocuments() {
+async function saveOwnerDocument(documentData) {
   try {
-    const url = '/api/documents/notarized';
+    const url = '/api/owner-documents';
+    console.log('[saveOwnerDocument] Sending document:', { id: documentData.id, name: documentData.name });
+
+    const response = await fetchWithFallback(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(documentData),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    console.log('[saveOwnerDocument] ✅ Saved:', responseData.id);
+    return responseData;
+  } catch (error) {
+    console.error('[saveOwnerDocument] ❌ Error:', error);
+    throw error;
+  }
+}
+
+async function fetchDocuments({ sessionId, ownerId } = {}) {
+  try {
+    const params = new URLSearchParams();
+    if (sessionId) params.append('sessionId', sessionId);
+    if (ownerId) params.append('ownerId', ownerId);
+
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const url = `/api/documents${query}`;
+    console.log('[fetchDocuments] Fetching from:', url);
+
+    const response = await fetchWithFallback(url);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: Failed to fetch documents`);
+    }
+
+    const responseData = await response.json();
+    console.log('[fetchDocuments] ✅ Got', responseData.length, 'documents');
+    return responseData;
+  } catch (error) {
+    console.error('[fetchDocuments] ❌ Error:', error);
+    return [];
+  }
+}
+
+async function fetchOwnerDocuments({ ownerId, sessionId, inProcess, notarized } = {}) {
+  try {
+    const params = new URLSearchParams();
+    if (ownerId) params.append('ownerId', ownerId);
+    if (sessionId) params.append('sessionId', sessionId);
+    if (inProcess !== undefined) params.append('inProcess', inProcess ? '1' : '0');
+    if (notarized !== undefined) params.append('notarized', notarized ? '1' : '0');
+
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const url = `/api/owner-documents${query}`;
+    console.log('[fetchOwnerDocuments] Fetching from:', url);
+
+    const response = await fetchWithFallback(url);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: Failed to fetch owner documents`);
+    }
+
+    const responseData = await response.json();
+    console.log('[fetchOwnerDocuments] ✅ Got', responseData.length, 'documents');
+    return responseData;
+  } catch (error) {
+    console.error('[fetchOwnerDocuments] ❌ Error:', error);
+    return [];
+  }
+}
+
+async function fetchNotarizedDocuments({ sessionId, ownerId } = {}) {
+  try {
+    const params = new URLSearchParams();
+    if (sessionId) params.append('sessionId', sessionId);
+    if (ownerId) params.append('ownerId', ownerId);
+
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const url = `/api/documents/notarized${query}`;
     console.log('[fetchNotarizedDocuments] Fetching from:', url);
 
     const response = await fetchWithFallback(url);
@@ -238,4 +498,138 @@ async function updateDocumentReview(documentId, notaryReview, notaryName) {
   }
 }
 
-export { saveSignature, fetchSignatures, deleteSignature, registerUser, loginUser, fetchUsers, saveDocument, fetchNotarizedDocuments, updateDocumentReview, API_BASE_URL };
+async function updateOwnerDocumentReview(documentId, notaryReview, notaryName) {
+  try {
+    const url = `/api/owner-documents/${documentId}/review`;
+    console.log('[updateOwnerDocumentReview] Updating:', documentId, 'as', notaryReview);
+
+    const response = await fetchWithFallback(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ notaryReview, notaryName }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    console.log('[updateOwnerDocumentReview] ✅ Updated');
+    return responseData;
+  } catch (error) {
+    console.error('[updateOwnerDocumentReview] ❌ Error:', error);
+    throw error;
+  }
+}
+
+async function deleteOwnerDocument(documentId) {
+  try {
+    const url = `/api/owner-documents/${documentId}`;
+    console.log('[deleteOwnerDocument] Deleting:', documentId);
+
+    const response = await fetchWithFallback(url, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    console.log('[deleteOwnerDocument] ✅ Deleted');
+    return responseData;
+  } catch (error) {
+    console.error('[deleteOwnerDocument] ❌ Error:', error);
+    throw error;
+  }
+}
+
+async function markOwnerDocumentSessionStarted(documentId, sessionId, notaryName, notaryUserId) {
+  try {
+    const url = `/api/owner-documents/${documentId}/session-started`;
+    console.log('[markOwnerDocumentSessionStarted] Updating:', documentId, sessionId);
+
+    const response = await fetchWithFallback(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ sessionId, notaryName, notaryUserId }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    console.log('[markOwnerDocumentSessionStarted] ✅ Updated');
+    return responseData;
+  } catch (error) {
+    console.error('[markOwnerDocumentSessionStarted] ❌ Error:', error);
+    throw error;
+  }
+}
+
+async function completeOwnerDocumentNotarization(documentId, notaryName, notarizedDataUrl) {
+  try {
+    const url = `/api/owner-documents/${documentId}/notarize`;
+    console.log('[completeOwnerDocumentNotarization] Notarizing:', documentId);
+
+    const payload = { notaryName };
+    if (notarizedDataUrl) payload.notarizedDataUrl = notarizedDataUrl;
+
+    const response = await fetchWithFallback(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    console.log('[completeOwnerDocumentNotarization] ✅ Notarized');
+    return responseData;
+  } catch (error) {
+    console.error('[completeOwnerDocumentNotarization] ❌ Error:', error);
+    throw error;
+  }
+}
+
+async function endOwnerDocumentSession(documentId, sessionId, notaryName, notaryUserId) {
+  try {
+    const url = `/api/owner-documents/${documentId}/session-ended`;
+    console.log('[endOwnerDocumentSession] Ending:', documentId, sessionId);
+
+    const response = await fetchWithFallback(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ sessionId, notaryName, notaryUserId }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    console.log('[endOwnerDocumentSession] Success');
+    return responseData;
+  } catch (error) {
+    console.error('[endOwnerDocumentSession] Error:', error);
+    throw error;
+  }
+}
+export { saveSignature, fetchSignatures, deleteSignature, saveAsset, fetchAssets, deleteAsset, registerUser, loginUser, fetchUsers, fetchAdminOverview, fetchAdminUserInfo, updateAdminUser, deleteAdminUser, terminateAdminSession, saveDocument, saveOwnerDocument, fetchDocuments, fetchOwnerDocuments, fetchNotarizedDocuments, updateDocumentReview, updateOwnerDocumentReview, deleteOwnerDocument, markOwnerDocumentSessionStarted, completeOwnerDocumentNotarization, endOwnerDocumentSession, API_BASE_URL };
+

@@ -1,15 +1,48 @@
-import React from 'react'
+import React, { Component } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import OwnerPage from './pages/OwnerPage'
 import OwnerDashboardPage from './pages/OwnerDashboardPage'
+import OwnerDocumentViewPage from './pages/OwnerDocumentViewPage'
 import OwnerSessionPage from './pages/OwnerSessionPage'
 import NotaryPage from './pages/NotaryPage'
 import NotaryDocDashboardPage from './pages/NotaryDocDashboardPage'
 import AdminPage from './pages/AdminPage'
+import HomePage from './pages/HomePage'
 import AuthPage from './pages/AuthPage'
 import AdminLoginPage from './pages/AdminLoginPage'
 import RegisterPage from './pages/RegisterPage'
 import './App.css'
+
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false, error: null, info: null }
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error, info) {
+    this.setState({ error, info })
+    console.error('📛 ErrorBoundary caught error:', error, info)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 24, color: '#fff', background: '#1a1a1a', height: '100vh' }}>
+          <h1 style={{ color: '#ff6b6b' }}>Something went wrong.</h1>
+          <p style={{ marginTop: 12, whiteSpace: 'pre-wrap' }}>{String(this.state.error)}</p>
+          <details style={{ marginTop: 12, whiteSpace: 'pre-wrap' }}>
+            {this.state.info?.componentStack}
+          </details>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 const AUTH_STORAGE_KEY = 'notary.authUser'
 
@@ -71,96 +104,100 @@ function RequireRole({ children, allowedRoles = [] }) {
 
 function App() {
   const authenticated = isUserAuthenticated()
-  const authUser = getAuthUser()
-  const defaultRoute = getDefaultRouteByRole(authUser?.role)
 
   return (
     <div className="app">
-      <Routes>
-        <Route
-          path="/login"
-          element={<AuthPage />}
-        />
-        <Route
-          path="/register"
-          element={<RegisterPage />}
-        />
-        <Route
-          path="/admin-login"
-          element={<AdminLoginPage />}
-        />
-        <Route
-          path="/"
-          element={
-            authenticated && defaultRoute ? (
-              <Navigate to={defaultRoute} replace />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
-        <Route
-          path="/owner/session"
-          element={
-            <RequireAuth>
-              <RequireRole allowedRoles={['owner']}>
-                <OwnerSessionPage />
-              </RequireRole>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/owner/doc/dashboard"
-          element={
-            <RequireAuth>
-              <RequireRole allowedRoles={['owner']}>
-                <OwnerDashboardPage />
-              </RequireRole>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/owner"
-          element={
-            <RequireAuth>
-              <RequireRole allowedRoles={['owner']}>
-                <OwnerPage />
-              </RequireRole>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/notary/doc/dashboard"
-          element={
-            <RequireAuth>
-              <RequireRole allowedRoles={['notary']}>
-                <NotaryDocDashboardPage />
-              </RequireRole>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/notary"
-          element={
-            <RequireAuth>
-              <RequireRole allowedRoles={['notary']}>
-                <NotaryPage />
-              </RequireRole>
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/admin"
-          element={
-            <RequireAuth>
-              <RequireRole allowedRoles={['admin']}>
-                <AdminPage />
-              </RequireRole>
-            </RequireAuth>
-          }
-        />
-        <Route path="*" element={<Navigate to={authenticated ? '/' : '/login'} replace />} />
-      </Routes>
+      <ErrorBoundary>
+        <Routes>
+          <Route
+            path="/login"
+            element={<AuthPage />}
+          />
+          <Route
+            path="/register"
+            element={<RegisterPage />}
+          />
+          <Route
+            path="/admin-login"
+            element={<AdminLoginPage />}
+          />
+          <Route
+            path="/"
+            element={<HomePage />}
+          />
+          <Route
+            path="/owner/session"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={['owner']}>
+                  <OwnerSessionPage />
+                </RequireRole>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/owner/doc/dashboard"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={['owner']}>
+                  <OwnerDashboardPage />
+                </RequireRole>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/owner/doc/view/:docId"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={['owner']}>
+                  <OwnerDocumentViewPage />
+                </RequireRole>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/owner"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={['owner']}>
+                  <OwnerPage />
+                </RequireRole>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/notary/doc/dashboard"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={['notary']}>
+                  <NotaryDocDashboardPage />
+                </RequireRole>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/notary"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={['notary']}>
+                  <NotaryPage />
+                </RequireRole>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={['admin']}>
+                  <AdminPage />
+                </RequireRole>
+              </RequireAuth>
+            }
+          />
+          <Route path="*" element={<Navigate to={authenticated ? '/' : '/login'} replace />} />
+        </Routes>
+      </ErrorBoundary>
     </div>
   )
 }

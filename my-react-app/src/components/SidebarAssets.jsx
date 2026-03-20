@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import SignaturePad from "./SignaturePad";
-import { deleteSignature, fetchSignatures, saveSignature } from "../utils/apiClient";
+import { deleteAsset, deleteSignature, fetchAssets, fetchSignatures, saveAsset, saveSignature } from "../utils/apiClient";
 
 const BASE_ASSETS = [
   {
@@ -67,6 +67,8 @@ const createTextAssetImage = (text) => {
 
 const SidebarAssets = ({
   userRole,
+  sessionId,
+  userId,
   onAssetGenerated,
   showAssets = true,
   uploadedAsset,
@@ -78,6 +80,7 @@ const SidebarAssets = ({
   const [showTextModal, setShowTextModal] = useState(false);
   const [textInput, setTextInput] = useState("");
   const [assets, setAssets] = useState(() => getBaseAssets(userRole));
+  const persistedAssetIdsRef = useRef(new Set());
 
   useEffect(() => {
     setAssets(getBaseAssets(userRole));
@@ -86,11 +89,17 @@ const SidebarAssets = ({
     setTextInput("");
   }, [userRole, assetScopeKey]);
 
+  // Reset session-scoped assets when we switch sessions
+  useEffect(() => {
+    setAssets(getBaseAssets(userRole));
+    persistedAssetIdsRef.current = new Set();
+  }, [sessionId, userRole]);
+
   // Fetch saved signatures from backend on mount
   useEffect(() => {
     const loadSignatures = async () => {
       try {
-        const savedSignatures = await fetchSignatures(userRole);
+        const savedSignatures = await fetchSignatures(userRole, { userId });
         console.log('[SidebarAssets] ✅ Loaded', savedSignatures.length, 'signatures');
         
         // Add saved signatures to assets with the proper structure
@@ -118,6 +127,41 @@ const SidebarAssets = ({
     loadSignatures();
   }, [userRole, assetScopeKey]);
 
+  // Fetch saved non-signature assets from backend on mount.
+  useEffect(() => {
+    const loadAssets = async () => {
+      try {
+        const savedAssets = await fetchAssets(userRole, { userId, sessionId });
+        const hidden = new Set(loadHiddenAssetIds(userRole));
+
+        const formattedAssets = savedAssets
+          .map((asset) => ({
+            id: asset.id,
+            name: asset.name,
+            type: asset.type,
+            image: asset.image,
+            text: asset.text,
+            width: asset.width || undefined,
+            height: asset.height || undefined,
+            user: asset.userRole,
+          }))
+          .filter((asset) => !hidden.has(asset.id));
+
+        formattedAssets.forEach((asset) => persistedAssetIdsRef.current.add(asset.id));
+
+        setAssets((prev) => {
+          const existingIds = new Set(prev.map((asset) => asset.id));
+          const uniqueNewAssets = formattedAssets.filter((asset) => !existingIds.has(asset.id));
+          return [...prev, ...uniqueNewAssets];
+        });
+      } catch (error) {
+        console.error('[SidebarAssets] Error loading assets:', error);
+      }
+    };
+
+    loadAssets();
+  }, [userRole, sessionId, userId, assetScopeKey]);
+
   // Add uploaded document as asset whenever it changes
   useEffect(() => {
     if (!uploadedAsset) return;
@@ -129,6 +173,30 @@ const SidebarAssets = ({
       if (prev.some((a) => a.id === uploadedAsset.id)) return prev;
       return [...prev, uploadedAsset];
     });
+
+    if (sessionId && userId && !persistedAssetIdsRef.current.has(uploadedAsset.id)) {
+      saveAsset({
+        id: uploadedAsset.id,
+        sessionId,
+        userId,
+        username: (() => {
+          try {
+            return JSON.parse(localStorage.getItem('notary.authUser') || 'null')?.username;
+          } catch {
+            return null;
+          }
+        })(),
+        name: uploadedAsset.name,
+        type: uploadedAsset.type,
+        image: uploadedAsset.image,
+        text: uploadedAsset.text,
+        width: uploadedAsset.width,
+        height: uploadedAsset.height,
+        userRole,
+      })
+        .then(() => persistedAssetIdsRef.current.add(uploadedAsset.id))
+        .catch((error) => console.warn('[SidebarAssets] Failed to persist uploaded asset:', error?.message || error));
+    }
   }, [uploadedAsset, userRole]);
 
   // Add all previously uploaded assets (from localStorage) when component mounts or uploadedAssets changes
@@ -141,9 +209,37 @@ const SidebarAssets = ({
       const newAssets = uploadedAssets.filter(
         (asset) => !hidden.has(asset.id) && !prev.some((a) => a.id === asset.id)
       );
+
+      if (sessionId && userId) {
+        newAssets.forEach((asset) => {
+          if (persistedAssetIdsRef.current.has(asset.id)) return;
+          saveAsset({
+            id: asset.id,
+            sessionId,
+            userId,
+            username: (() => {
+              try {
+                return JSON.parse(localStorage.getItem('notary.authUser') || 'null')?.username;
+              } catch {
+                return null;
+              }
+            })(),
+            name: asset.name,
+            type: asset.type,
+            image: asset.image,
+            text: asset.text,
+            width: asset.width,
+            height: asset.height,
+            userRole,
+          })
+            .then(() => persistedAssetIdsRef.current.add(asset.id))
+            .catch((error) => console.warn('[SidebarAssets] Failed to persist uploaded assets:', error?.message || error));
+        });
+      }
+
       return [...prev, ...newAssets];
     });
-  }, [uploadedAssets, userRole]);
+  }, [uploadedAssets, userRole, sessionId, userId]);
 
   const handleDragStart = (e, asset) => {
     // Prevent dragging when clicking the delete button
@@ -183,21 +279,36 @@ const SidebarAssets = ({
     setAssets(prev => [...prev, newAsset]);
     onAssetGenerated?.(newAsset);
 
-    // Save to backend asynchronously
-    try {
-      console.log("💾 Saving signature to MongoDB...");
-      const result = await saveSignature({
-        id: newAsset.id,
-        name: newAsset.name,
-        image: signatureImage,
-        userRole: userRole,
-      });
-      console.log("✅ Signature saved to backend successfully:", result.id);
-    } catch (error) {
-      console.error("❌ Error saving signature to backend:", error);
-      console.warn("Signature is saved locally but backend persistence failed.");
+    // Save to backend asynchronously (only when we have session + user context)
+    if (sessionId && userId) {
+      try {
+        console.log("💾 Saving signature to MongoDB...");
+        const authUsername = (() => {
+          try {
+            return JSON.parse(localStorage.getItem('notary.authUser') || 'null')?.username;
+          } catch {
+            return undefined;
+          }
+        })();
+
+        const result = await saveSignature({
+          id: newAsset.id,
+          sessionId,
+          userId,
+          username: authUsername,
+          name: newAsset.name,
+          image: signatureImage,
+          userRole: userRole,
+        });
+        console.log("✅ Signature saved to backend successfully:", result.id);
+      } catch (error) {
+        console.error("❌ Error saving signature to backend:", error);
+        console.warn("Signature is saved locally but backend persistence failed.");
+      }
+    } else {
+      console.warn('Skipping backend signature save: missing sessionId or userId');
     }
-    
+
     setShowSignaturePad(false);
   };
 
@@ -220,6 +331,13 @@ const SidebarAssets = ({
       } catch (error) {
         console.warn("[SidebarAssets] Signature delete not persisted on backend:", error?.message || error);
       }
+    } else {
+      try {
+        await deleteAsset(assetId);
+        persistedAssetIdsRef.current.delete(assetId);
+      } catch (error) {
+        console.warn("[SidebarAssets] Asset delete not persisted on backend:", error?.message || error);
+      }
     }
   };
 
@@ -241,6 +359,31 @@ const SidebarAssets = ({
 
     setAssets((prev) => [...prev, newAsset]);
     onAssetGenerated?.(newAsset);
+
+    if (sessionId && userId) {
+      saveAsset({
+        id: newAsset.id,
+        sessionId,
+        userId,
+        username: (() => {
+          try {
+            return JSON.parse(localStorage.getItem('notary.authUser') || 'null')?.username;
+          } catch {
+            return null;
+          }
+        })(),
+        name: newAsset.name,
+        type: newAsset.type,
+        image: newAsset.image,
+        text: newAsset.text,
+        width: newAsset.width,
+        height: newAsset.height,
+        userRole,
+      })
+        .then(() => persistedAssetIdsRef.current.add(newAsset.id))
+        .catch((error) => console.warn('[SidebarAssets] Failed to persist text asset:', error?.message || error));
+    }
+
     setTextInput("");
     setShowTextModal(false);
   };
@@ -558,3 +701,4 @@ const SidebarAssets = ({
 };
 
 export default SidebarAssets;
+

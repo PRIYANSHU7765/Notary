@@ -1,44 +1,61 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { loginUser } from '../utils/apiClient'
 import './AuthPage.css'
 
 const AUTH_STORAGE_KEY = 'notary.authUser'
 const AUTH_SESSION_TTL_MS = 8 * 60 * 60 * 1000
-const ADMIN_USERNAME = 'Priyanshu'
-const ADMIN_PASSWORD = '12345678'
 
 const AdminLoginPage = () => {
   const navigate = useNavigate()
-  const [username, setUsername] = useState(ADMIN_USERNAME)
-  const [password, setPassword] = useState(ADMIN_PASSWORD)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const handleAdminLogin = (event) => {
+  const handleAdminLogin = async (event) => {
     event.preventDefault()
     setError('')
 
-    if (username.trim() !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
-      setError('Invalid admin credentials.')
+    if (!username.trim() || !password.trim()) {
+      setError('Username and password are required.')
       return
     }
 
-    localStorage.removeItem('notary.role')
-    localStorage.removeItem('notary.ownerSessionId')
-    localStorage.removeItem('notary.lastSessionId')
+    setLoading(true)
 
-    localStorage.setItem(
-      AUTH_STORAGE_KEY,
-      JSON.stringify({
-        username: ADMIN_USERNAME,
-        email: 'admin@notary.local',
-        role: 'admin',
-        token: 'hardcoded-admin-token',
-        loggedInAt: Date.now(),
-        expiresAt: Date.now() + AUTH_SESSION_TTL_MS,
-      })
-    )
+    try {
+      const result = await loginUser({ username: username.trim(), password })
 
-    navigate('/admin', { replace: true })
+      if (result?.user?.role !== 'admin') {
+        setError('This account is not an admin account.')
+        setLoading(false)
+        return
+      }
+
+      localStorage.removeItem('notary.role')
+      localStorage.removeItem('notary.ownerSessionId')
+      localStorage.removeItem('notary.lastSessionId')
+
+      localStorage.setItem(
+        AUTH_STORAGE_KEY,
+        JSON.stringify({
+          userId: result.user.userId,
+          username: result.user.username,
+          email: result.user.email,
+          role: result.user.role,
+          token: result.token,
+          loggedInAt: Date.now(),
+          expiresAt: Date.now() + AUTH_SESSION_TTL_MS,
+        })
+      )
+
+      navigate('/admin', { replace: true })
+    } catch (loginError) {
+      setError(loginError.message || 'Invalid admin credentials.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const moveToUserLogin = () => {
@@ -80,7 +97,9 @@ const AdminLoginPage = () => {
 
           {error && <p className="auth-message auth-error">{error}</p>}
 
-          <button type="submit" className="auth-button">Login</button>
+          <button type="submit" className="auth-button" disabled={loading}>
+            {loading ? 'Signing in...' : 'Login'}
+          </button>
         </form>
 
         <p className="auth-switch">

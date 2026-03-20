@@ -7,7 +7,7 @@ const AUTH_STORAGE_KEY = 'notary.authUser'
 const AUTH_SESSION_TTL_MS = 8 * 60 * 60 * 1000
 
 const getDefaultRouteByRole = (role) => {
-  if (role === 'owner') return '/owner'
+  if (role === 'owner') return '/owner/doc/dashboard'
   if (role === 'notary') return '/notary/doc/dashboard'
   if (role === 'admin') return '/admin'
   return '/'
