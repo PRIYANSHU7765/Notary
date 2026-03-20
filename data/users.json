@@ -11,7 +11,7 @@
     "userId": "admin-seed-001",
     "username": "admin",
     "email": "admin@notary.local",
-    "passwordHash": "85f53780ebb0dac5e97c97ca167f730e:8a0d61248ad34c711e47689bc22780e28a5a81ba7242d731e31151f1f0c3375e0b7f4a258569f753c4b0e30cadb4094d08c5df6e9cec72116dc96f0493fb0a04",
+    "passwordHash": "6fbecef09afb53d8d03d4ba75be9df37:eaf532dafffd0ee56e5a5d7c95d177cb1f3eef1c979e192dbe1f8e955e2660ed5fc44c18f1a7078b031ccc375e5d5f9283c65b3ca548072f0847cdc6ca53cdf4",
     "role": "admin",
     "createdAt": "2026-03-19T12:26:06.121Z"
   },

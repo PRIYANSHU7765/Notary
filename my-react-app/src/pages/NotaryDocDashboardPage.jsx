@@ -165,6 +165,11 @@ const NotaryDocDashboardPage = () => {
       const documentId = updated?.documentId || updated?.id
       if (!documentId) return
 
+      // Close action menu if doc status changed away from accepted (e.g., time expired and auto-started)
+      if (actionMenuDocId === documentId && String(updated.status || '').trim().toLowerCase() !== 'accepted') {
+        setActionMenuDocId(null)
+      }
+
       setDocs((prevDocs) => {
         const exists = prevDocs.some((d) => d.id === documentId)
         if (!exists) return prevDocs
@@ -176,6 +181,7 @@ const NotaryDocDashboardPage = () => {
                 notaryReview: updated.notaryReview || d.notaryReview,
                 notaryName: updated.notaryName || d.notaryName,
                 notaryReviewedAt: updated.notaryReviewedAt || d.notaryReviewedAt,
+                scheduledAt: updated.scheduledAt || d.scheduledAt,
                 status: updated.status || d.status,
               }
             : d
@@ -399,7 +405,7 @@ const NotaryDocDashboardPage = () => {
                   ) : null}
 
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', position: 'relative' }}>
-                    {status === 'accepted' ? (
+                    {(status === 'accepted' || status === 'session_started') ? (
                       <button
                         onClick={() => handleStartSession(doc)}
                         style={{

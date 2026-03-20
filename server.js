@@ -205,6 +205,7 @@ CREATE TABLE IF NOT EXISTS owner_documents (
   ownerId TEXT NOT NULL,
   ownerName TEXT NOT NULL,
   sessionId TEXT,
+  scheduledAt INTEGER,
   name TEXT NOT NULL,
   size INTEGER,
   type TEXT,
@@ -400,6 +401,10 @@ function ensureOwnerDocumentsSchema() {
       console.log('🔧 Adding missing owner_documents.notarizedPath column');
       db.exec("ALTER TABLE owner_documents ADD COLUMN notarizedPath TEXT;");
     }
+    if (!columns.includes('scheduledAt')) {
+      console.log('🔧 Adding missing owner_documents.scheduledAt column');
+      db.exec("ALTER TABLE owner_documents ADD COLUMN scheduledAt INTEGER;");
+    }
 
     // Normalize legacy rows from earlier workflow bug where accepted docs were marked notarized.
     db.exec(`
@@ -414,6 +419,71 @@ function ensureOwnerDocumentsSchema() {
     `);
   } catch (err) {
     console.warn('⚠️ Failed to ensure owner_documents schema:', err.message || err);
+  }
+}
+
+function autoStartDueScheduledMeetings() {
+  try {
+    const nowMs = Date.now();
+    const dueDocuments = dbAll(
+      `SELECT * FROM owner_documents
+       WHERE status = 'accepted'
+         AND scheduledAt IS NOT NULL
+         AND scheduledAt <= :nowMs`,
+      { nowMs }
+    );
+
+    dueDocuments.forEach((doc) => {
+      dbRun(
+        `
+        UPDATE owner_documents
+        SET status = :status,
+            inProcess = :inProcess,
+            notarized = :notarized,
+            notaryReview = :notaryReview
+        WHERE id = :id
+      `,
+        {
+          id: doc.id,
+          status: 'session_started',
+          inProcess: 1,
+          notarized: 0,
+          notaryReview: 'accepted',
+        }
+      );
+
+      const updatedDoc = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id: doc.id });
+      if (!updatedDoc) return;
+
+      io.emit('documentReviewUpdated', {
+        id: updatedDoc.id,
+        documentId: updatedDoc.id,
+        sessionId: updatedDoc.sessionId,
+        ownerId: updatedDoc.ownerId,
+        notaryReview: updatedDoc.notaryReview || 'accepted',
+        notaryName: updatedDoc.notaryName || 'Unknown Notary',
+        notaryReviewedAt: updatedDoc.notaryReviewedAt,
+        status: updatedDoc.status,
+        scheduledAt: updatedDoc.scheduledAt,
+      });
+
+      io.emit('notarySessionStarted', {
+        documentId: updatedDoc.id,
+        sessionId: updatedDoc.sessionId,
+        notaryName: updatedDoc.notaryName || 'Unknown Notary',
+        notaryUserId: updatedDoc.notaryId || null,
+        scheduledAt: updatedDoc.scheduledAt,
+        timestamp: new Date().toISOString(),
+      });
+
+      console.log(`⏰ Auto-started scheduled meeting for document ${updatedDoc.id} at ${updatedDoc.scheduledAt}`);
+    });
+
+    if (dueDocuments.length > 0) {
+      persistDatabase();
+    }
+  } catch (error) {
+    console.error('Error auto-starting scheduled meetings:', error);
   }
 }
 
@@ -2138,6 +2208,7 @@ app.put('/api/owner-documents/:id/review', (req, res) => {
       SET notaryReview = :notaryReview,
           notaryReviewedAt = :notaryReviewedAt,
           notaryName = :notaryName,
+          scheduledAt = CASE WHEN :status = 'accepted' THEN scheduledAt ELSE NULL END,
           status = :status,
           inProcess = :inProcess,
           notarized = :notarized,
@@ -2172,6 +2243,7 @@ app.put('/api/owner-documents/:id/review', (req, res) => {
       notaryReview,
       notaryName,
       notaryReviewedAt: document.notaryReviewedAt,
+      scheduledAt: document.scheduledAt,
       status: document.status,
     });
 
@@ -2179,6 +2251,69 @@ app.put('/api/owner-documents/:id/review', (req, res) => {
   } catch (error) {
     console.error('Error updating owner document review:', error);
     res.status(500).json({ error: 'Failed to update owner document review' });
+  }
+});
+
+app.put('/api/owner-documents/:id/schedule', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { scheduledAt } = req.body || {};
+
+    const existing = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+    if (!existing) {
+      return res.status(404).json({ error: 'Owner document not found' });
+    }
+
+    const status = String(existing.status || '').trim().toLowerCase();
+    if (status !== 'accepted') {
+      return res.status(400).json({ error: 'Only accepted documents can be scheduled' });
+    }
+
+    const scheduledAtMs = new Date(scheduledAt).getTime();
+    if (!Number.isFinite(scheduledAtMs)) {
+      return res.status(400).json({ error: 'Invalid scheduledAt value' });
+    }
+
+    dbRun(
+      `
+      UPDATE owner_documents
+      SET scheduledAt = :scheduledAt,
+          inProcess = 1,
+          status = :status,
+          notarized = 0,
+          notaryReview = :notaryReview
+      WHERE id = :id
+    `,
+      {
+        id,
+        scheduledAt: scheduledAtMs,
+        status: 'accepted',
+        notaryReview: existing.notaryReview || 'accepted',
+      }
+    );
+    persistDatabase();
+
+    const updated = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+    if (!updated) {
+      return res.status(404).json({ error: 'Owner document not found after update' });
+    }
+
+    io.emit('documentReviewUpdated', {
+      id: updated.id,
+      documentId: updated.id,
+      sessionId: updated.sessionId,
+      ownerId: updated.ownerId,
+      notaryReview: updated.notaryReview || 'accepted',
+      notaryName: updated.notaryName || 'Unknown Notary',
+      notaryReviewedAt: updated.notaryReviewedAt,
+      status: updated.status,
+      scheduledAt: updated.scheduledAt,
+    });
+
+    res.json(updated);
+  } catch (error) {
+    console.error('Error scheduling owner document meeting:', error);
+    res.status(500).json({ error: 'Failed to schedule owner document meeting' });
   }
 });
 
@@ -2383,6 +2518,7 @@ io.on('connection', (socket) => {
 async function startServer() {
   try {
     await initDatabase();
+    setInterval(autoStartDueScheduledMeetings, 5000);
 
     server.listen(PORT, () => {
       console.log(`

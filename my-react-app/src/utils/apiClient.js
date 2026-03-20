@@ -11,8 +11,17 @@ const API_BASE_CANDIDATES = [
   ...(isDev ? ['', 'http://localhost:5001', 'http://localhost:5002', 'http://localhost:5000'] : []),
 ].filter((v) => v !== undefined && v !== null); // keep '' in the list
 
-let lastWorkingApiBaseUrl =
+const storedApiBaseUrl =
   (typeof window !== 'undefined' && window.localStorage.getItem(API_BASE_STORAGE_KEY)) ||
+  null;
+
+if (typeof window !== 'undefined' && configuredApiBaseUrl && storedApiBaseUrl && storedApiBaseUrl !== configuredApiBaseUrl) {
+  window.localStorage.setItem(API_BASE_STORAGE_KEY, configuredApiBaseUrl);
+}
+
+let lastWorkingApiBaseUrl =
+  configuredApiBaseUrl ||
+  storedApiBaseUrl ||
   API_BASE_CANDIDATES[0];
 
 const getBaseUrlPriority = () => {

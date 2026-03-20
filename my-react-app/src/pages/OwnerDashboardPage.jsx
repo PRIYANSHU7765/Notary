@@ -635,13 +635,15 @@ const OwnerDashboardPage = () => {
             const nextName = backendDoc.notaryName || doc.notaryName;
             const nextReviewedAt = backendDoc.notaryReviewedAt || doc.notaryReviewedAt;
             const nextSessionId = backendDoc.sessionId || doc.sessionId;
+            const nextScheduledAt = backendDoc.scheduledAt || doc.scheduledAt;
 
             if (
               nextStatus !== doc.status ||
               nextReview !== doc.notaryReview ||
               nextName !== doc.notaryName ||
               nextReviewedAt !== doc.notaryReviewedAt ||
-              nextSessionId !== doc.sessionId
+              nextSessionId !== doc.sessionId ||
+              nextScheduledAt !== doc.scheduledAt
             ) {
               changed = true;
               console.log(`✅ [OWNER] Polling: Updated doc ${doc.id} status to ${nextStatus}`);
@@ -652,6 +654,7 @@ const OwnerDashboardPage = () => {
                 notaryName: nextName,
                 notaryReviewedAt: nextReviewedAt,
                 sessionId: nextSessionId,
+                scheduledAt: nextScheduledAt,
               };
             }
 
@@ -680,7 +683,7 @@ const OwnerDashboardPage = () => {
   // Keep owner dashboard in sync with notary accept/reject decisions.
   useEffect(() => {
     const onDocumentReviewUpdated = (data) => {
-      const { documentId, notaryReview, notaryName, notaryReviewedAt, status } = data || {};
+      const { documentId, notaryReview, notaryName, notaryReviewedAt, status, scheduledAt } = data || {};
       if (!documentId || !notaryReview) {
         console.warn('⚠️ [OWNER] Invalid documentReviewUpdated data:', data);
         return;
@@ -691,7 +694,7 @@ const OwnerDashboardPage = () => {
       setDocs((prevDocs) => {
         const nextDocs = prevDocs.map((doc) =>
           doc.id === documentId
-            ? { ...doc, status: status || doc.status, notaryReview, notaryName, notaryReviewedAt }
+            ? { ...doc, status: status || doc.status, notaryReview, notaryName, notaryReviewedAt, scheduledAt: scheduledAt || doc.scheduledAt }
             : doc
         );
         saveDocs(nextDocs);
