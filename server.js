@@ -2322,7 +2322,7 @@ io.on('connection', (socket) => {
   socket.on('liveMeetingStarted', (data) => {
     const userSession = userSessions.get(socket.id);
     const roomId = normalizeRoomId(data?.sessionId || userSession?.roomId);
-    if (!userSession || !roomId || userSession.roomId !== roomId || userSession.role !== 'notary') {
+    if (!userSession || !roomId || userSession.roomId !== roomId || (userSession.role !== 'notary' && userSession.role !== 'owner')) {
       return;
     }
 

@@ -1290,14 +1290,12 @@ const OwnerDashboardPage = () => {
               </div>
             </div>
 
-            {/* Screen Recording Section */}
+            {/* Screen Sharing + Document Editor */}
             <ScreenRecorder
               role="owner"
               sessionId={activeSessions[activeSessionDocId] || previousSessions[activeSessionDocId] || ""}
               socket={socket}
             />
-
-            {/* Document Editor */}
             <div style={{ marginBottom: "15px", padding: "15px", backgroundColor: "#f5f5f5", borderRadius: "5px" }}>
               <label htmlFor="session-file-upload" style={{ fontWeight: "bold" }}>
                 📁 Upload Asset:

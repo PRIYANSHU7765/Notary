@@ -11,7 +11,7 @@
     "userId": "admin-seed-001",
     "username": "admin",
     "email": "admin@notary.local",
-    "passwordHash": "54e7942075eceac79169f83f5b0ea536:7a484973945bf09a294f1eb928e46cf1da57b5db92bec9003590b4edf0f67c43833aa5dfc6fb14d28759536fdffb3748e835a894c48fc38e1ac2a575b6a2134f",
+    "passwordHash": "e0f8f884927141b05c2d4737df88cf2a:72599796013c30c8c5f3d2d41123f39faa5fe850ae908540c60ac1c35010bc9c0722edf042562216ac3c0f70212eae1b7b2b387d73f3dc22bab0db7c292566b5",
     "role": "admin",
     "createdAt": "2026-03-19T12:26:06.121Z"
   },
@@ -86,5 +86,13 @@
     "passwordHash": "d027710d6a74f70444fce1f04c720bed:99a836e59bf25111ceff8e3c5ee17a609b95997a528890d7b82dbfe6bcad210fa6e0ab2a4d61d51c1d7707572c629e3ff9d798369d2f4bc48bc2ee674a75a2e2",
     "role": "notary",
     "createdAt": "2026-03-16T05:57:25.168Z"
+  },
+  {
+    "userId": "3c834fb7-b665-4d72-bf60-6ec7f6854382",
+    "username": "Alex1",
+    "email": "alex1@gmail.com",
+    "passwordHash": "44f4e2ed9d390e2cdd99b0cc69c26b23:55af1e6df132cd95d98a17d715554cf0244872df25b63d53c011e4038e254ba6f8c179d5152c29b21158628a04f8fc033c0572a80906c9b755baa19c19b178f9",
+    "role": "notary",
+    "createdAt": "2026-03-23T04:52:05.943Z"
   }
 ]

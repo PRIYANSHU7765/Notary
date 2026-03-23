@@ -458,8 +458,7 @@ const OwnerPage = () => {
           )}
         </div>
 
-        {/* Screen Recorder */}
-        <ScreenRecorder />
+        <ScreenRecorder role="owner" sessionId={sessionId || ""} socket={socket} />
 
         {/* Main Content Area */}
         <div style={{ flex: 1, minWidth: 0 }}>

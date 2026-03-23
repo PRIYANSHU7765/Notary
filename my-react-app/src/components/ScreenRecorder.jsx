@@ -1,12 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
 
-const ScreenRecorder = ({ role = "notary", sessionId = "", socket = null }) => {
+const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
   const isNotaryRole = role === "notary";
   const isOwnerRole = role === "owner";
+  const canRecord = isNotaryRole;
+  const canHostLiveMeeting = isNotaryRole || isOwnerRole;
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordedUrl, setRecordedUrl] = useState(null);
   const [isLiveMeeting, setIsLiveMeeting] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [liveMeetingError, setLiveMeetingError] = useState("");
   const [cameraBoxPosition, setCameraBoxPosition] = useState({ x: 24, y: 120 });
   const [isRemoteLiveAvailable, setIsRemoteLiveAvailable] = useState(false);
@@ -59,6 +62,36 @@ const ScreenRecorder = ({ role = "notary", sessionId = "", socket = null }) => {
       }
       peerConnectionsRef.current.delete(viewerSocketId);
     });
+  };
+
+  const screenShareStreamRef = useRef(null);
+
+  const startScreenShare = async () => {
+    if (!canHostLiveMeeting || isScreenSharing) return;
+
+    try {
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      screenShareStreamRef.current = screenStream;
+      setIsScreenSharing(true);
+
+      screenStream.getTracks().forEach((track) => {
+        track.onended = () => {
+          stopScreenShare();
+        };
+      });
+    } catch (error) {
+      console.error("Error starting screen share:", error);
+      setLiveMeetingError("Failed to start screen share. Please allow screen permissions.");
+    }
+  };
+
+  const stopScreenShare = () => {
+    const screenStream = screenShareStreamRef.current;
+    if (!screenStream) return;
+
+    screenStream.getTracks().forEach((track) => track.stop());
+    screenShareStreamRef.current = null;
+    setIsScreenSharing(false);
   };
 
   const stopOwnerLiveMeetingView = ({ clearError = true } = {}) => {
@@ -224,7 +257,7 @@ const ScreenRecorder = ({ role = "notary", sessionId = "", socket = null }) => {
     }
 
     setIsLiveMeeting(false);
-    if (socket && sessionId && isNotaryRole) {
+    if (socket && sessionId && canHostLiveMeeting) {
       socket.emit("liveMeetingEnded", { sessionId });
     }
     if (clearError) {
@@ -233,7 +266,7 @@ const ScreenRecorder = ({ role = "notary", sessionId = "", socket = null }) => {
   };
 
   const startLiveMeeting = async () => {
-    if (!isNotaryRole) return;
+    if (!canHostLiveMeeting) return;
 
     try {
       const [screenStream, cameraStream] = await Promise.all([
@@ -332,7 +365,7 @@ const ScreenRecorder = ({ role = "notary", sessionId = "", socket = null }) => {
     if (!socket || !sessionId) return;
 
     const onSessionStatus = (status) => {
-      if (status?.sessionId !== sessionId || !isOwnerRole) return;
+      if (status?.sessionId !== sessionId) return;
       const nextAvailable = Boolean(status?.liveMeetingActive);
       setIsRemoteLiveAvailable(nextAvailable);
       if (!nextAvailable) {
@@ -586,27 +619,54 @@ const ScreenRecorder = ({ role = "notary", sessionId = "", socket = null }) => {
       <h4 style={{ margin: "0 0 10px 0" }}>🎥 Screen Recording</h4>
 
       <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
-        {!isRecording ? (
-          <button
-            onClick={startRecording}
-            style={{
-              padding: "8px 16px",
-              backgroundColor: "#f44336",
-              color: "white",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontWeight: "bold",
-            }}
-          >
-            🔴 Start Recording
-          </button>
+        {canRecord ? (
+          !isRecording ? (
+            <button
+              onClick={startRecording}
+              style={{
+                padding: "8px 16px",
+                backgroundColor: "#f44336",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+                fontWeight: "bold",
+              }}
+            >
+              🔴 Start Recording
+            </button>
+          ) : (
+            <button
+              onClick={stopRecording}
+              style={{
+                padding: "8px 16px",
+                backgroundColor: "#ff9800",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+                fontWeight: "bold",
+              }}
+            >
+              ⏹️ Stop Recording
+            </button>
+          )
+        ) : isOwnerRole ? (
+          <div style={{ color: "#555", alignSelf: "center" }}>
+            {/* Owner only sees screen share controls; no waiting text */}
+          </div>
         ) : (
+          <div style={{ color: "#555", fontStyle: "italic", alignSelf: "center" }}>
+            Screen recorder is disabled for this role.
+          </div>
+        )}
+
+        {canHostLiveMeeting && !isScreenSharing ? (
           <button
-            onClick={stopRecording}
+            onClick={startScreenShare}
             style={{
               padding: "8px 16px",
-              backgroundColor: "#ff9800",
+              backgroundColor: "#1976d2",
               color: "white",
               border: "none",
               borderRadius: "4px",
@@ -614,9 +674,26 @@ const ScreenRecorder = ({ role = "notary", sessionId = "", socket = null }) => {
               fontWeight: "bold",
             }}
           >
-            ⏹️ Stop Recording
+            🖥️ Start Screen Share
           </button>
-        )}
+        ) : null}
+
+        {canHostLiveMeeting && isScreenSharing ? (
+          <button
+            onClick={stopScreenShare}
+            style={{
+              padding: "8px 16px",
+              backgroundColor: "#455a64",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: "pointer",
+              fontWeight: "bold",
+            }}
+          >
+            ⏹️ Stop Screen Share
+          </button>
+        ) : null}
 
         {isNotaryRole && !isLiveMeeting ? (
           <button
@@ -648,7 +725,7 @@ const ScreenRecorder = ({ role = "notary", sessionId = "", socket = null }) => {
               fontWeight: "bold",
             }}
           >
-            ⏹️ Stop Live Meeting
+            ⏹️ Stop Screen Share
           </button>
         ) : null}
 
