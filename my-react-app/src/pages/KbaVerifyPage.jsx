@@ -259,7 +259,7 @@ const KbaVerifyPage = () => {
               disabled={busyAction === 'verify-otp' || isOtpAlreadyVerified || !isOtpPending}
               onClick={handleVerifyOtp}
             >
-              {busyAction === 'verify-otp' ? 'Verifying...' : isOtpAlreadyVerified ? 'Already verified' : 'Verify OTP'}
+              {busyAction === 'verify-otp' ? 'Verifying...' : isOtpAlreadyVerified ? 'Verified' : 'Verify OTP'}
             </button>
           </div>
         </div>
@@ -281,7 +281,7 @@ const KbaVerifyPage = () => {
             </select>
           </div>
 
-          <div className="kba-form-grid" style={{ gap: '10px' }}>
+          <div className="kba-form-grid kba-form-grid-single-column" style={{ gap: '10px' }}>
             <label style={{ display: 'block' }}>
               Front side:
               <input

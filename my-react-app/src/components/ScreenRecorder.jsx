@@ -925,7 +925,7 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
         ) : null}
       </div>
 
-      {(isNotaryRole || (isOwnerRole && isOwnerJoinedLiveMeeting)) && (
+      {(isLiveMeeting && (isNotaryRole || (isOwnerRole && isOwnerJoinedLiveMeeting))) && (
         <div
           ref={ownerBoxRef}
           style={{
@@ -971,7 +971,7 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
         </div>
       )}
 
-      {(isNotaryRole || (isOwnerRole && isOwnerJoinedLiveMeeting)) && (
+      {(isLiveMeeting && (isNotaryRole || (isOwnerRole && isOwnerJoinedLiveMeeting))) && (
         <div
           ref={cameraBoxRef}
           style={{
