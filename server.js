@@ -3868,7 +3868,7 @@ io.on('connection', (socket) => {
   socket.on('liveMeetingStarted', (data) => {
     const userSession = userSessions.get(socket.id);
     const roomId = normalizeRoomId(data?.sessionId || userSession?.roomId);
-    if (!userSession || !roomId || userSession.roomId !== roomId || userSession.role !== 'notary') {
+    if (!userSession || !roomId || userSession.roomId !== roomId || (userSession.role !== 'notary' && userSession.role !== 'owner')) {
       return;
     }
 
@@ -4017,6 +4017,34 @@ io.on('connection', (socket) => {
       fromSocketId: socket.id,
       targetSocketId: meeting.hostSocketId,
       candidate: data.candidate,
+    });
+  });
+
+  socket.on('screenShareStarted', (data) => {
+    const userSession = userSessions.get(socket.id);
+    const roomId = normalizeRoomId(data?.sessionId || userSession?.roomId);
+    if (!userSession || !roomId || userSession.roomId !== roomId) {
+      return;
+    }
+
+    io.to(roomId).emit('screenShareStarted', {
+      sessionId: roomId,
+      role: data?.role || userSession.role,
+      fromSocketId: socket.id,
+    });
+  });
+
+  socket.on('screenShareStopped', (data) => {
+    const userSession = userSessions.get(socket.id);
+    const roomId = normalizeRoomId(data?.sessionId || userSession?.roomId);
+    if (!userSession || !roomId || userSession.roomId !== roomId) {
+      return;
+    }
+
+    io.to(roomId).emit('screenShareStopped', {
+      sessionId: roomId,
+      role: data?.role || userSession.role,
+      fromSocketId: socket.id,
     });
   });
 
