@@ -1795,7 +1795,7 @@ const OwnerDashboardPage = () => {
           )}
 
           {/* Content */}
-          <div style={{ maxWidth: "900px", margin: "0 auto", padding: "32px 24px" }}>
+          <div style={{ maxWidth: "1340px", width: "100%", margin: "0 auto", padding: "32px 24px" }}>
             {docs.length === 0 ? (
           <div
             style={{
@@ -1826,15 +1826,17 @@ const OwnerDashboardPage = () => {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 120px 140px 140px 48px",
+                gridTemplateColumns: "minmax(280px, 1.8fr) 100px 170px 170px 110px",
+                gap: "12px",
                 padding: "12px 20px",
                 background: "#f9fafc",
-                borderBottom: "1px solid #e8eaed",
+                borderBottom: "2px solid #e8eaed",
                 fontSize: "12px",
                 fontWeight: 700,
-                color: "#888",
+                color: "#475569",
                 textTransform: "uppercase",
                 letterSpacing: "0.5px",
+                alignItems: "center",
               }}
             >
               <span>Document</span>
@@ -1895,11 +1897,13 @@ const OwnerDashboardPage = () => {
                   key={doc.id}
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr 120px 140px 140px 48px",
+                    gridTemplateColumns: "minmax(280px, 1.8fr) 100px 170px 170px 110px",
+                    gap: "12px",
                     padding: "14px 20px",
                     alignItems: "center",
-                    borderBottom: idx < docs.length - 1 ? "1px solid #f0f0f0" : "none",
+                    borderBottom: idx < docs.length - 1 ? "1px solid #e7ecf3" : "none",
                     transition: "background 0.1s",
+                    minHeight: "70px",
                   }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = "#fafafa")}
                   onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}

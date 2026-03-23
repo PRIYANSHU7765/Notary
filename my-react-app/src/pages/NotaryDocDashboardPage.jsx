@@ -291,8 +291,25 @@ const NotaryDocDashboardPage = () => {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f4f6fb', padding: '36px 20px', fontFamily: "'Segoe UI', sans-serif" }}>
-      <div style={{ maxWidth: '980px', margin: '0 auto' }}>
-        <h1 style={{ margin: 0, color: '#0f172a', fontSize: '30px', fontWeight: 700 }}>Notary Document Dashboard</h1>
+      <div style={{ maxWidth: '1600px', width: '100%', margin: '0 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+          <h1 style={{ margin: 0, color: '#0f172a', fontSize: '30px', fontWeight: 700 }}>Notary Document Dashboard</h1>
+          <button
+            onClick={() => navigate('/notary/dashboard')}
+            style={{
+              border: '1px solid #1d4ed8',
+              background: '#1d4ed8',
+              color: '#fff',
+              borderRadius: '8px',
+              padding: '8px 14px',
+              cursor: 'pointer',
+              fontWeight: 600,
+              fontSize: '14px',
+            }}
+          >
+            Back to Dashboard
+          </button>
+        </div>
         <p style={{ margin: '8px 0 16px 0', color: '#475569' }}>
           Review documents marked for notarization by owners.
         </p>
@@ -335,7 +352,7 @@ const NotaryDocDashboardPage = () => {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '2fr 1.2fr 1.4fr 1fr 1.2fr 1.4fr 1.5fr',
+              gridTemplateColumns: '2.4fr 1.1fr 1.2fr 1fr 1.2fr 1.25fr 1.25fr',
               gap: '12px',
               padding: '14px 18px',
               background: '#f8fafc',
@@ -343,6 +360,7 @@ const NotaryDocDashboardPage = () => {
               fontWeight: 700,
               fontSize: '13px',
               color: '#334155',
+              alignItems: 'center',
             }}
           >
             <span>Document</span>
@@ -376,9 +394,9 @@ const NotaryDocDashboardPage = () => {
                     borderBottom: idx === notarizedDocs.length - 1 ? 'none' : '1px solid #f1f5f9',
                   }}
                 >
-                  <span style={{ color: '#0f172a', fontWeight: 600 }}>{doc.name || 'Untitled Document'}</span>
-                  <span style={{ color: '#334155' }}>{doc.ownerName || 'Unknown Owner'}</span>
-                  <span style={{ color: '#475569' }}>{formatDate(doc.uploadedAt)}</span>
+                  <span style={{ color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name || 'Untitled Document'}</span>
+                  <span style={{ color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.ownerName || 'Unknown Owner'}</span>
+                  <span style={{ color: '#475569', whiteSpace: 'nowrap' }}>{formatDate(doc.uploadedAt)}</span>
                   <span
                     style={{
                       display: 'inline-block',
@@ -399,15 +417,13 @@ const NotaryDocDashboardPage = () => {
                     </div>
                   ) : null}
                   
-                  <span style={{ color: '#475569', fontSize: '12px', fontFamily: 'monospace' }}>
-                    {doc.sessionId ? doc.sessionId.substring(0, 20) + '...' : '-'}
+                  <span style={{ color: '#475569', fontSize: '12px', fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {doc.sessionId ? doc.sessionId.substring(0, 26) + '...' : '-'}
                   </span>
 
-                  {doc.scheduledAt ? (
-                    <div style={{ color: '#059669', fontSize: '12px', fontWeight: 600 }}>
-                      📅 {new Date(doc.scheduledAt).toLocaleDateString()} {new Date(doc.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </div>
-                  ) : null}
+                  <span style={{ color: doc.scheduledAt ? '#059669' : '#64748b', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {doc.scheduledAt ? `📅 ${new Date(doc.scheduledAt).toLocaleDateString()} ${new Date(doc.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '—'}
+                  </span>
 
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', position: 'relative' }}>
                     {(status === 'accepted' || status === 'session_started') ? (
