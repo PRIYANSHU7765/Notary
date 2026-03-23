@@ -69,6 +69,10 @@
   gap: 10px;
 }
 
+.kba-form-grid-single-column {
+  grid-template-columns: 1fr;
+}
+
 .kba-input,
 .kba-select {
   width: 100%;
