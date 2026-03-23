@@ -440,7 +440,7 @@ const NotaryDocDashboardPage = () => {
                         Accept
                       </button>
                     ) : null}
-                    {status !== 'rejected' && status !== 'session_started' ? (
+                    {status !== 'accepted' && status !== 'rejected' && status !== 'session_started' ? (
                       <button
                         onClick={() => handleDecision(doc.id, 'rejected')}
                         style={{

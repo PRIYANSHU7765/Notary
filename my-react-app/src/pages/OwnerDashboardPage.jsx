@@ -161,18 +161,19 @@ const ThreeDotsMenu = ({ onView, onDownload, onNotarize, onCancelNotarize, onDel
           >
             👁 View
           </button>
-          <button
-            onClick={() => {
-              setOpen(false);
-              if (notarized) onCancelNotarize();
-              else onNotarize();
-            }}
-            style={menuItemStyle}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "#f5f5f5")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
-          >
-            {notarized ? "🚫 Cancel notarize" : "✍️ Notarize"}
-          </button>
+          {!notarized ? (
+            <button
+              onClick={() => {
+                setOpen(false);
+                onNotarize();
+              }}
+              style={menuItemStyle}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#f5f5f5")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
+            >
+              ✍️ Notarize
+            </button>
+          ) : null}
           {onDownload && (
             <button
               onClick={() => { setOpen(false); onDownload(); }}
