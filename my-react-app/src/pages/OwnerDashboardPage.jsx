@@ -161,7 +161,7 @@ const ThreeDotsMenu = ({ onView, onDownload, onNotarize, onCancelNotarize, onDel
           >
             👁 View
           </button>
-          {!notarized ? (
+          {onNotarize ? (
             <button
               onClick={() => {
                 setOpen(false);
@@ -2038,7 +2038,11 @@ const OwnerDashboardPage = () => {
                   <ThreeDotsMenu
                     onView={() => handleView(doc)}
                     onDownload={isNotarized ? () => handleDownloadNotarized(doc) : undefined}
-                    onNotarize={() => handleNotarize(doc)}
+                    onNotarize={
+                      !isNotarized && status === 'uploaded'
+                        ? () => handleNotarize(doc)
+                        : undefined
+                    }
                     onCancelNotarize={() => handleCancelNotarize(doc)}
                     onDelete={() => handleDelete(doc)}
                     notarized={isNotarized}
