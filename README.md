@@ -54,6 +54,7 @@ This project delivers a full digital notarization workflow for secure document c
 
 - Node.js >= 18
 - npm
+- Python 3.10+ (for YOLO signature extraction)
 
 ## Installation
 
@@ -61,6 +62,7 @@ This project delivers a full digital notarization workflow for secure document c
 git clone <REPO_URL> d:\Artesian\notary
 cd d:\Artesian\notary
 npm install
+pip install -r scripts/requirements-signature-extraction.txt
 cd my-react-app
 npm install
 cd ..
@@ -94,6 +96,33 @@ ONEDRIVE_DRIVE_ID=<target-drive-id>
 ONEDRIVE_FOLDER_PATH=/NotaryRecordings
 ONEDRIVE_SHARE_SCOPE=organization
 RECORDING_UPLOAD_MAX_BYTES=125829120
+
+# Python-based signature extraction
+SIGNATURE_PYTHON_EXECUTABLE=python
+SIGNATURE_PYTHON_TIMEOUT_MS=120000
+SIGNATURE_INFERENCE_PROVIDER=hf_api
+# Optional if model/gateway requires auth token
+HF_TOKEN=<your-huggingface-token>
+# Optional custom model id for hosted inference
+SIGNATURE_HF_API_MODEL=tech4humans/yolov8s-signature-detector
+```
+
+Install Python dependencies (if not already installed):
+
+```bash
+cd d:\Artesian\notary
+pip install -r scripts/requirements-signature-extraction.txt
+```
+
+Notes for signature extraction providers:
+
+- hf_api: runs inference on Hugging Face hosted infrastructure and avoids local weight downloads.
+- local: runs ultralytics locally and downloads yolov8s.pt on first run.
+
+If you want local mode, also install ultralytics manually:
+
+```bash
+pip install ultralytics
 ```
 
 ### Gmail-specific

@@ -25,6 +25,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 const initSqlJs = require('sql.js');
 let nodemailer = null;
 try {
@@ -1098,6 +1099,9 @@ const ONEDRIVE_DRIVE_ID = String(process.env.ONEDRIVE_DRIVE_ID || '').trim();
 const ONEDRIVE_USER_ID = String(process.env.ONEDRIVE_USER_ID || '').trim();
 const ONEDRIVE_FOLDER_PATH = String(process.env.ONEDRIVE_FOLDER_PATH || '/NotaryRecordings').trim() || '/NotaryRecordings';
 const ONEDRIVE_SHARE_SCOPE = String(process.env.ONEDRIVE_SHARE_SCOPE || 'organization').trim().toLowerCase();
+const SIGNATURE_PYTHON_EXECUTABLE = String(process.env.SIGNATURE_PYTHON_EXECUTABLE || 'python').trim() || 'python';
+const SIGNATURE_PYTHON_TIMEOUT_MS = Number(process.env.SIGNATURE_PYTHON_TIMEOUT_MS || 120000);
+const SIGNATURE_PYTHON_SCRIPT = path.resolve(__dirname, 'scripts', 'signature_detector.py');
 
 const KBA_STATUS = {
   DRAFT: 'draft',
@@ -1271,6 +1275,97 @@ async function uploadRecordingToOneDrive({ fileBuffer, fileName, mimeType, sessi
     shareUrl: shareUrl || null,
     sizeBytes: Number(uploadPayload?.size || fileBuffer.length || 0),
   };
+}
+
+function runPythonSignatureExtractor(payload) {
+  return new Promise((resolve, reject) => {
+    if (!fs.existsSync(SIGNATURE_PYTHON_SCRIPT)) {
+      reject(new Error(`Signature extractor script not found: ${SIGNATURE_PYTHON_SCRIPT}`));
+      return;
+    }
+
+    const child = spawn(SIGNATURE_PYTHON_EXECUTABLE, [SIGNATURE_PYTHON_SCRIPT], {
+      cwd: __dirname,
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        HF_HUB_DISABLE_SYMLINKS: '1',
+        HF_HUB_DISABLE_SYMLINKS_WARNING: '1',
+      },
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+
+    const timeoutMs = Number.isFinite(SIGNATURE_PYTHON_TIMEOUT_MS) && SIGNATURE_PYTHON_TIMEOUT_MS > 0
+      ? SIGNATURE_PYTHON_TIMEOUT_MS
+      : 120000;
+
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try {
+        child.kill();
+      } catch {
+        // no-op
+      }
+      reject(new Error(`Python signature extractor timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk) => {
+      stdout += String(chunk || '');
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderr += String(chunk || '');
+    });
+
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(new Error(`Failed to start python process: ${err?.message || err}`));
+    });
+
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+
+      if (code !== 0 && !stdout.trim()) {
+        reject(new Error(`Python extractor failed (exit ${code}): ${stderr || 'No stderr output'}`));
+        return;
+      }
+
+      let parsed;
+      try {
+        parsed = JSON.parse(stdout || '{}');
+      } catch {
+        reject(new Error(`Invalid extractor response. stderr: ${stderr || 'none'}`));
+        return;
+      }
+
+      if (!parsed?.ok) {
+        reject(new Error(parsed?.error || stderr || 'Signature extractor failed'));
+        return;
+      }
+
+      resolve(parsed);
+    });
+
+    try {
+      child.stdin.write(JSON.stringify(payload));
+      child.stdin.end();
+    } catch (err) {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timeout);
+        reject(new Error(`Failed to send payload to extractor: ${err?.message || err}`));
+      }
+    }
+  });
 }
 
 // User-related queries are executed via helper functions (dbGet/dbAll) to keep sql.js usage consistent.
@@ -2620,6 +2715,43 @@ app.get('/api/sessions', (req, res) => {
 const escapeRegExp = (string) => String(string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Auth API Endpoints
+
+app.post('/api/signature-extract-yolo', async (req, res) => {
+  try {
+    const dataUrl = String(req.body?.dataUrl || '').trim();
+    const pageNumber = Number(req.body?.pageNumber || 1);
+    const confidence = Number(req.body?.confidence ?? 0.25);
+    const iou = Number(req.body?.iou ?? 0.45);
+    const maxDetections = Number(req.body?.maxDetections ?? 15);
+
+    if (!dataUrl) {
+      return res.status(400).json({ error: 'dataUrl is required' });
+    }
+
+    if (!/^data:(application\/pdf|image\/(png|jpe?g));base64,/i.test(dataUrl)) {
+      return res.status(400).json({ error: 'Only PDF, PNG, JPG, and JPEG data URLs are supported' });
+    }
+
+    const result = await runPythonSignatureExtractor({
+      dataUrl,
+      pageNumber: Number.isFinite(pageNumber) ? Math.max(1, Math.floor(pageNumber)) : 1,
+      confidence: Number.isFinite(confidence) ? Math.min(Math.max(confidence, 0.01), 0.99) : 0.25,
+      iou: Number.isFinite(iou) ? Math.min(Math.max(iou, 0.01), 0.99) : 0.45,
+      maxDetections: Number.isFinite(maxDetections) ? Math.min(Math.max(Math.floor(maxDetections), 1), 50) : 15,
+    });
+
+    return res.json({
+      pageNumber: result.pageNumber,
+      totalPages: result.totalPages,
+      pageImageDataUrl: result.pageImageDataUrl,
+      candidates: Array.isArray(result.candidates) ? result.candidates : [],
+      model: result.model || 'tech4humans/yolov8s-signature-detector',
+    });
+  } catch (error) {
+    console.error('Error extracting signature with YOLO:', error);
+    return res.status(500).json({ error: error?.message || 'Failed to extract signatures with YOLO' });
+  }
+});
 
 // Get all signatures for a user role (optionally scoped to a session or user)
 app.get('/api/signatures/:userRole', (req, res) => {

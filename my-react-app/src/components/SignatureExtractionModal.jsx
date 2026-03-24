@@ -58,13 +58,13 @@ const SignatureExtractionModal = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [previewDataUrl, setPreviewDataUrl] = useState("");
   const [resultCanvas, setResultCanvas] = useState(null);
-  const [analysisInfo, setAnalysisInfo] = useState({ threshold: 178 });
+  const [analysisInfo, setAnalysisInfo] = useState({ confidence: 0.25, iou: 0.45 });
 
   const pageCanvasRef = useRef(null);
 
   const selectedCandidate = useMemo(() => candidates[selectedIndex] || null, [candidates, selectedIndex]);
 
-  const runExtraction = async (targetPage, threshold = analysisInfo.threshold) => {
+  const runExtraction = async (targetPage, options = analysisInfo) => {
     if (!pdfDataUrl) {
       setError("Upload or open a PDF document before extracting signature.");
       return;
@@ -75,7 +75,8 @@ const SignatureExtractionModal = ({
 
     try {
       const result = await extractSignatureCandidatesFromPdf(pdfDataUrl, targetPage, {
-        threshold,
+        confidence: options.confidence,
+        iou: options.iou,
       });
 
       setResultCanvas(result.canvas);
@@ -83,7 +84,7 @@ const SignatureExtractionModal = ({
       setSelectedIndex(0);
       setPageNumber(result.pageNumber);
       setTotalPages(result.totalPages || 1);
-      setAnalysisInfo({ threshold });
+      setAnalysisInfo({ confidence: options.confidence, iou: options.iou });
 
       if (!result.candidates.length) {
         setPreviewDataUrl("");
@@ -176,7 +177,7 @@ const SignatureExtractionModal = ({
             <div>
               <h3 style={{ margin: 0, color: "#0f172a" }}>{title}</h3>
               <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "13px" }}>
-                Detecting signatures using local heuristic analysis.
+                Detecting signatures using YOLOv8 (Hugging Face model).
               </p>
             </div>
             <div style={statusTagStyle}>
@@ -200,7 +201,7 @@ const SignatureExtractionModal = ({
           >
             {loading ? (
               <div style={{ padding: "40px 20px", textAlign: "center", color: "#475569", fontWeight: 600 }}>
-                Analyzing page for signature candidates...
+                Running YOLO signature detection on this page...
               </div>
             ) : (
               <canvas
@@ -236,7 +237,7 @@ const SignatureExtractionModal = ({
                 />
                 <button
                   type="button"
-                  onClick={() => runExtraction(pageNumber, analysisInfo.threshold)}
+                  onClick={() => runExtraction(pageNumber, analysisInfo)}
                   disabled={loading}
                   style={{
                     border: "none",
