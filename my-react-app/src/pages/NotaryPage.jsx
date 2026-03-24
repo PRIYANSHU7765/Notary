@@ -60,7 +60,6 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   const [sessionStatus, setSessionStatus] = useState(null);
   const [uploadedAssets, setUploadedAssets] = useState([]);
   const [uploadedAsset, setUploadedAsset] = useState(null);
-  const [sessionAmount, setSessionAmount] = useState('0');
   const [isAssetBoxMode, setIsAssetBoxMode] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [toastType, setToastType] = useState("info");
@@ -447,12 +446,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
     })();
 
     let notarizedDataUrl = null;
-    const parsedAmount = Number(sessionAmount);
-    const normalizedAmount = Number.isFinite(parsedAmount) && parsedAmount >= 0 ? Number(parsedAmount.toFixed(2)) : 0;
-    if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
-      showToast('Enter a valid non-negative session amount.', 'error');
-      return;
-    }
+    const normalizedAmount = 25; // Fixed price of 25
     if (pdfDataUrl) {
       try {
         const bytes = await generateNotarizedPdfBytes(pdfDataUrl, elements, {
@@ -711,21 +705,6 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
               >
                 Mark Notarized
               </button>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={sessionAmount}
-                onChange={(e) => setSessionAmount(e.target.value)}
-                style={{
-                  width: '120px',
-                  padding: '6px 8px',
-                  borderRadius: '6px',
-                  border: '1px solid #cbd5e1',
-                  fontSize: '12px',
-                }}
-                title="Session amount to be paid by owner before session end"
-              />
               <button
                 onClick={handleEndSession}
                 style={{
