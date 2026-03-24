@@ -1,219 +1,109 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import NotaryWorkspaceShell from '../components/NotaryWorkspaceShell';
 import { fetchNotaryDashboardStats } from '../utils/apiClient';
-import './NotaryDashboardPage.css';
+import './NotaryWorkspacePages.css';
+
+const formatCurrency = (value) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value || 0));
 
 const NotaryDashboardPage = () => {
-  const navigate = useNavigate();
-  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [showTransactionHistory, setShowTransactionHistory] = useState(false);
+  const [error, setError] = useState('');
+  const [stats, setStats] = useState({});
 
   useEffect(() => {
-    const loadStats = async () => {
+    let active = true;
+
+    const load = async () => {
       try {
         setLoading(true);
         const response = await fetchNotaryDashboardStats();
-        
-        if (response.success && response.data) {
-          setStats(response.data);
-        } else {
-          throw new Error('Failed to load dashboard stats');
-        }
+        const data = response?.data || response || {};
+        if (!active) return;
+        setStats(data);
       } catch (err) {
-        console.error('Error loading notary dashboard stats:', err);
-        setError(err.message || 'Failed to load dashboard stats');
+        if (!active) return;
+        setError(err?.message || 'Failed to load dashboard data');
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
 
-    loadStats();
+    load();
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const formatDate = (timestamp) => {
-    if (!timestamp) return '-';
-    const date = new Date(Number(timestamp));
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount || 0);
-  };
-
-  const getStatusBadge = (status) => {
-    const statusMap = {
-      'notarized': { bg: '#d1e7dd', color: '#0f5132' },
-      'accepted': { bg: '#d1fae5', color: '#065f46' },
-      'session_started': { bg: '#cfe2ff', color: '#0a4e9b' },
-      'uploaded': { bg: '#fff3cd', color: '#856404' },
-      'rejected': { bg: '#fee2e2', color: '#991b1b' },
+  const summary = useMemo(() => {
+    const tx = Array.isArray(stats.transactions) ? stats.transactions : [];
+    const paid = tx.filter((t) => String(t.paymentStatus || '').toLowerCase() === 'paid').length;
+    return {
+      totalCalls: Number(stats.totalCompletedCalls || 0),
+      payout: Number(stats.availableForPayout || 0),
+      scheduledMeetings: Number(stats.scheduledCalls || 0),
+      onDemandCalls: Number(stats.onDemandCalls || 0),
+      totalTransactions: tx.length,
+      paidTransactions: paid,
     };
-    const style = statusMap[status?.toLowerCase()] || { bg: '#e5e7eb', color: '#374151' };
-    return style;
-  };
-
-  if (loading) {
-    return (
-      <div className="notary-dashboard-container">
-        <div className="loading-state">
-          <p>Loading your dashboard...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="notary-dashboard-container">
-        <div className="error-state">
-          <p>Error: {error}</p>
-          <button onClick={() => window.location.reload()}>Retry</button>
-        </div>
-      </div>
-    );
-  }
+  }, [stats]);
 
   return (
-    <div className="notary-dashboard-container">
-      <div className="dashboard-header">
-        <h1>Notary Dashboard</h1>
-        <p className="header-subtitle">Track your notarization activity and earnings</p>
+    <NotaryWorkspaceShell
+      title="Home"
+      subtitle="Overview of your notary activity, payout, and scheduling performance"
+    >
+      <div className="page-stack">
+        <section className="notary-card">
+          <div className="notary-card-header">Key Stats</div>
+          <div className="notary-card-body">
+            {loading ? <p className="muted">Loading stats...</p> : null}
+            {!loading && error ? <p className="muted">{error}</p> : null}
+
+            {!loading && !error ? (
+              <div className="kpi-grid">
+                <div className="kpi-item">
+                  <p className="kpi-label">Total Calls</p>
+                  <p className="kpi-value">{summary.totalCalls}</p>
+                </div>
+                <div className="kpi-item">
+                  <p className="kpi-label">Available for Payout</p>
+                  <p className="kpi-value small">{formatCurrency(summary.payout)}</p>
+                </div>
+                <div className="kpi-item">
+                  <p className="kpi-label">Scheduled Meetings</p>
+                  <p className="kpi-value">{summary.scheduledMeetings}</p>
+                </div>
+                <div className="kpi-item">
+                  <p className="kpi-label">On demand Calls</p>
+                  <p className="kpi-value">{summary.onDemandCalls}</p>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="section-grid">
+          <article className="notary-card">
+            <div className="notary-card-header">Transaction Snapshot</div>
+            <div className="notary-card-body">
+              <p className="kpi-label">Total Transactions</p>
+              <p className="kpi-value small">{summary.totalTransactions}</p>
+              <p className="muted">Paid Transactions: {summary.paidTransactions}</p>
+            </div>
+          </article>
+
+          <article className="notary-card">
+            <div className="notary-card-header">Schedule Snapshot</div>
+            <div className="notary-card-body">
+              <p className="kpi-label">Scheduled Meetings</p>
+              <p className="kpi-value small">{summary.scheduledMeetings}</p>
+              <p className="muted">Use Meetings to view current, upcoming, and past sessions.</p>
+            </div>
+          </article>
+        </section>
       </div>
-
-      {/* Main Metrics Section */}
-      <div className="main-metrics">
-        <div className="metric-card main-metric">
-          <div className="metric-content metric-content-center">
-            <p className="metric-label">Total Completed Calls to Date</p>
-            <p className="metric-value">{stats?.totalCompletedCalls || 0}</p>
-          </div>
-        </div>
-
-        <div className="action-buttons">
-          <button className="btn btn-primary" onClick={() => navigate('/notary/doc/dashboard')}>
-            Access Document Queue
-          </button>
-          <button className="btn btn-secondary">View Transactions as NST</button>
-        </div>
-      </div>
-
-      {/* Statistics Section */}
-      <div className="stats-section">
-        <h2>My Statistics</h2>
-        <div className="stats-grid">
-          {/* Available for Payout */}
-          <div className="stat-card">
-            <div className="stat-content">
-              <p className="stat-amount">{formatCurrency(stats?.availableForPayout || 0)}</p>
-              <p className="stat-label">Available for Payout</p>
-              {(stats?.availableForPayout || 0) > 0 && (
-                <button className="stat-action">View Stripe</button>
-              )}
-            </div>
-          </div>
-
-          {/* Total Transactions */}
-          <div className="stat-card">
-            <div className="stat-content">
-              <p className="stat-amount">{stats?.transactions?.length || 0}</p>
-              <p className="stat-label">Total Transactions</p>
-              <button 
-                className="stat-action"
-                onClick={() => setShowTransactionHistory(!showTransactionHistory)}
-              >
-                {showTransactionHistory ? 'Hide History' : 'View History'}
-              </button>
-            </div>
-          </div>
-
-          {/* On-Demand Calls */}
-          <div className="stat-card">
-            <div className="stat-content">
-              <p className="stat-amount">{stats?.onDemandCalls || 0}</p>
-              <p className="stat-label">On-Demand Calls</p>
-            </div>
-          </div>
-
-          {/* Scheduled Calls */}
-          <div className="stat-card">
-            <div className="stat-content">
-              <p className="stat-amount">{stats?.scheduledCalls || 0}</p>
-              <p className="stat-label">Scheduled Calls</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Transaction History */}
-      {showTransactionHistory && stats?.transactions && stats.transactions.length > 0 && (
-        <div className="transaction-history-section">
-          <h2>Transaction History</h2>
-          <div className="transaction-table-container">
-            <table className="transaction-table">
-              <thead>
-                <tr>
-                  <th>Document</th>
-                  <th>Owner</th>
-                  <th>Amount</th>
-                  <th>Date</th>
-                  <th>Status</th>
-                  <th>Payment Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stats.transactions.map((transaction) => (
-                  <tr key={transaction.id}>
-                    <td className="doc-name">{transaction.documentName}</td>
-                    <td>{transaction.ownerName}</td>
-                    <td className="amount">{formatCurrency(transaction.amount)}</td>
-                    <td className="date">{formatDate(transaction.date)}</td>
-                    <td>
-                      <span 
-                        className="badge"
-                        style={{
-                          background: getStatusBadge(transaction.status).bg,
-                          color: getStatusBadge(transaction.status).color
-                        }}
-                      >
-                        {transaction.status}
-                      </span>
-                    </td>
-                    <td>
-                      <span 
-                        className="badge"
-                        style={{
-                          background: transaction.paymentStatus === 'paid' ? '#d1e7dd' : '#fff3cd',
-                          color: transaction.paymentStatus === 'paid' ? '#0f5132' : '#856404'
-                        }}
-                      >
-                        {transaction.paymentStatus}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {showTransactionHistory && (!stats?.transactions || stats.transactions.length === 0) && (
-        <div className="empty-state">
-          <p>No transactions yet</p>
-        </div>
-      )}
-    </div>
+    </NotaryWorkspaceShell>
   );
 };
 

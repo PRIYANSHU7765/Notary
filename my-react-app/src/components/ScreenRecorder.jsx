@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { uploadSessionRecording } from "../utils/apiClient";
 
 const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
   const isNotaryRole = role === "notary";
@@ -8,6 +9,9 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordedUrl, setRecordedUrl] = useState(null);
+  const [uploadedRecordingUrl, setUploadedRecordingUrl] = useState("");
+  const [isUploadingRecording, setIsUploadingRecording] = useState(false);
+  const [recordingUploadError, setRecordingUploadError] = useState("");
   const [isLiveMeeting, setIsLiveMeeting] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [remoteScreenSharing, setRemoteScreenSharing] = useState(false);
@@ -22,6 +26,7 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
 
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
+  const recordingStartedAtRef = useRef(null);
 
   const peerConnectionsRef = useRef(new Map());
   const ownerPeerConnectionRef = useRef(null);
@@ -685,8 +690,61 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (recordedUrl) {
+        URL.revokeObjectURL(recordedUrl);
+      }
+    };
+  }, [recordedUrl]);
+
+  const blobToDataUrl = (blob) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Failed to read recording blob."));
+      reader.readAsDataURL(blob);
+    });
+
+  const uploadRecordingBlob = async (blob, endedAtMs) => {
+    setIsUploadingRecording(true);
+    setRecordingUploadError("");
+    setUploadedRecordingUrl("");
+
+    const startedAtMs = recordingStartedAtRef.current || endedAtMs;
+    const fileName = `notary-session-${sessionId || "unknown"}-${Date.now()}.webm`;
+    const dataUrl = await blobToDataUrl(blob);
+
+    const response = await uploadSessionRecording({
+      sessionId,
+      role,
+      fileName,
+      mimeType: blob.type || "video/webm",
+      dataUrl,
+      startedAt: new Date(startedAtMs).toISOString(),
+      endedAt: new Date(endedAtMs).toISOString(),
+      durationMs: Math.max(0, endedAtMs - startedAtMs),
+    });
+
+    const linkedUrl =
+      response?.recording?.shareUrl ||
+      response?.recording?.providerUrl ||
+      response?.recording?.webUrl ||
+      "";
+
+    setUploadedRecordingUrl(linkedUrl);
+    setIsUploadingRecording(false);
+  };
+
   const startRecording = async () => {
     try {
+      if (recordedUrl) {
+        URL.revokeObjectURL(recordedUrl);
+      }
+      setRecordedUrl(null);
+      setUploadedRecordingUrl("");
+      setRecordingUploadError("");
+
       // Get screen display stream
       const screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: { mediaSource: "screen" },
@@ -719,6 +777,7 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
       };
 
       mediaRecorder.onstop = () => {
+        const endedAtMs = Date.now();
         const blob = new Blob(chunksRef.current, { type: "video/webm" });
         const url = URL.createObjectURL(blob);
         setRecordedUrl(url);
@@ -726,10 +785,17 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
         // Stop all tracks
         screenStream.getTracks().forEach((track) => track.stop());
         if (audioStream) audioStream.getTracks().forEach((track) => track.stop());
+
+        uploadRecordingBlob(blob, endedAtMs).catch((error) => {
+          console.error("Failed to upload recording:", error);
+          setIsUploadingRecording(false);
+          setRecordingUploadError(error?.message || "Failed to upload recording to OneDrive.");
+        });
       };
 
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.start();
+      recordingStartedAtRef.current = Date.now();
       setIsRecording(true);
     } catch (error) {
       console.error("Error starting screen recording:", error);
@@ -741,15 +807,6 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-    }
-  };
-
-  const downloadRecording = () => {
-    if (recordedUrl) {
-      const a = document.createElement("a");
-      a.href = recordedUrl;
-      a.download = `notarization-session-${Date.now()}.webm`;
-      a.click();
     }
   };
 
@@ -1041,34 +1098,26 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
               marginBottom: "10px",
             }}
           />
-          <button
-            onClick={downloadRecording}
-            style={{
-              width: "100%",
-              padding: "8px",
-              backgroundColor: "#4CAF50",
-              color: "white",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-            }}
-          >
-            ⬇️ Download Recording
-          </button>
-          <button
-            onClick={() => setRecordedUrl(null)}
-            style={{
-              width: "100%",
-              marginTop: "5px",
-              padding: "8px",
-              backgroundColor: "#ccc",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-            }}
-          >
-            Clear
-          </button>
+          {isUploadingRecording ? (
+            <p style={{ margin: "4px 0 0 0", color: "#0d47a1", fontWeight: "bold" }}>
+              Uploading recording to OneDrive...
+            </p>
+          ) : null}
+          {!isUploadingRecording && uploadedRecordingUrl ? (
+            <a
+              href={uploadedRecordingUrl}
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: "#0d47a1", fontWeight: "bold", textDecoration: "none" }}
+            >
+              Open recording in OneDrive
+            </a>
+          ) : null}
+          {!isUploadingRecording && recordingUploadError ? (
+            <p style={{ margin: "4px 0 0 0", color: "#c62828", fontWeight: "bold" }}>
+              {recordingUploadError}
+            </p>
+          ) : null}
         </div>
       )}
 

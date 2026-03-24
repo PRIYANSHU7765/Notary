@@ -7,6 +7,11 @@ import OwnerSessionPage from './pages/OwnerSessionPage'
 import NotaryPage from './pages/NotaryPage'
 import NotaryDocDashboardPage from './pages/NotaryDocDashboardPage'
 import NotaryDashboardPage from './pages/NotaryDashboardPage'
+import NotaryTransactionsPage from './pages/NotaryTransactionsPage'
+import NotaryToolsPage from './pages/NotaryToolsPage'
+import NotaryOnDemandPage from './pages/NotaryOnDemandPage'
+import NotaryMeetingsPage from './pages/NotaryMeetingsPage'
+import NotarySettingsPage from './pages/NotarySettingsPage'
 import AdminPage from './pages/AdminPage'
 import HomePage from './pages/HomePage'
 import AuthPage from './pages/AuthPage'
@@ -60,7 +65,7 @@ const getAuthUser = () => {
 
 const getDefaultRouteByRole = (role) => {
   if (role === 'owner') return '/owner/doc/dashboard'
-  if (role === 'notary') return '/notary/doc/dashboard'
+  if (role === 'notary') return '/notary/dashboard'
   if (role === 'admin') return '/admin'
   return null
 }
@@ -274,6 +279,66 @@ function App() {
                 <RequireRole allowedRoles={['notary']}>
                   <RequireKbaApproval>
                     <NotaryDashboardPage />
+                  </RequireKbaApproval>
+                </RequireRole>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/notary/transactions"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={['notary']}>
+                  <RequireKbaApproval>
+                    <NotaryTransactionsPage />
+                  </RequireKbaApproval>
+                </RequireRole>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/notary/tools"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={['notary']}>
+                  <RequireKbaApproval>
+                    <NotaryToolsPage />
+                  </RequireKbaApproval>
+                </RequireRole>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/notary/on-demand"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={['notary']}>
+                  <RequireKbaApproval>
+                    <NotaryOnDemandPage />
+                  </RequireKbaApproval>
+                </RequireRole>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/notary/meetings"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={['notary']}>
+                  <RequireKbaApproval>
+                    <NotaryMeetingsPage />
+                  </RequireKbaApproval>
+                </RequireRole>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/notary/settings"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={['notary']}>
+                  <RequireKbaApproval>
+                    <NotarySettingsPage />
                   </RequireKbaApproval>
                 </RequireRole>
               </RequireAuth>

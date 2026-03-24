@@ -1,0 +1,116 @@
+.notary-workspace-layout {
+  min-height: 100vh;
+  background: #eef2f7;
+}
+
+.notary-workspace-main {
+  margin-left: 232px;
+  min-height: 100vh;
+}
+
+.notary-workspace-header {
+  min-height: 84px;
+  padding: 16px 22px;
+  border-bottom: 1px solid #d8e0ea;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.notary-workspace-header h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.1;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.notary-workspace-header p {
+  margin: 6px 0 0;
+  color: #475569;
+  font-size: 14px;
+}
+
+.notary-workspace-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.notary-workspace-content {
+  padding: 22px;
+}
+
+.notary-card {
+  background: #ffffff;
+  border: 1px solid #d7dee7;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+}
+
+.notary-card-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 19px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.notary-card-body {
+  padding: 16px;
+}
+
+.notary-btn {
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid #1d4ed8;
+  background: #1d4ed8;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.notary-btn.secondary {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.notary-table-wrap {
+  overflow: auto;
+}
+
+.notary-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.notary-table th,
+.notary-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.notary-table th {
+  font-size: 12px;
+  color: #334155;
+  background: #f8fafc;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.notary-table td {
+  font-size: 14px;
+  color: #0f172a;
+}
+
+@media (max-width: 960px) {
+  .notary-workspace-main {
+    margin-left: 200px;
+  }
+}

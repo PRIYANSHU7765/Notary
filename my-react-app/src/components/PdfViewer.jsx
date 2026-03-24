@@ -12,6 +12,8 @@ const PdfViewer = ({
   file,
   fileName,
   onLoadSuccess,
+  onViewerScroll,
+  scrollContainerRef,
   containerHeight = "600px",
   showControls = true,
   pageWidth,
@@ -49,6 +51,15 @@ const PdfViewer = ({
     if (numPages && pageNumber < numPages) setPageNumber(pageNumber + 1);
   };
 
+  const setScrollContainerRef = (element) => {
+    if (!scrollContainerRef) return;
+    if (typeof scrollContainerRef === "function") {
+      scrollContainerRef(element);
+      return;
+    }
+    scrollContainerRef.current = element;
+  };
+
   return (
     <div className="pdf-viewer" style={{ height: containerHeight, display: "flex", flexDirection: "column" }}>
       {showControls && isPdfFile && (
@@ -65,7 +76,11 @@ const PdfViewer = ({
         </div>
       )}
 
-      <div style={{ flex: 1, overflow: noInternalScroll ? "visible" : "auto", display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "10px" }}>
+      <div
+        ref={setScrollContainerRef}
+        onScroll={onViewerScroll}
+        style={{ flex: 1, overflow: noInternalScroll ? "visible" : "auto", display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "10px" }}
+      >
         {file ? (
           isPdfFile ? (
             <>

@@ -83,6 +83,17 @@ SMTP_PASS=<gmail-app-password>
 SMTP_FROM="Notary Platform <no-reply@yourdomain.com>"
 OTP_CHANNEL_DEFAULT=email
 OTP_TTL_MS=600000
+
+# Auto-upload session recordings to OneDrive
+ONEDRIVE_TENANT_ID=<azure-tenant-id>
+ONEDRIVE_CLIENT_ID=<azure-app-client-id>
+ONEDRIVE_CLIENT_SECRET=<azure-app-client-secret>
+# Provide either ONEDRIVE_DRIVE_ID (recommended) or ONEDRIVE_USER_ID
+ONEDRIVE_DRIVE_ID=<target-drive-id>
+# ONEDRIVE_USER_ID=<target-user-id-or-upn>
+ONEDRIVE_FOLDER_PATH=/NotaryRecordings
+ONEDRIVE_SHARE_SCOPE=organization
+RECORDING_UPLOAD_MAX_BYTES=125829120
 ```
 
 ### Gmail-specific

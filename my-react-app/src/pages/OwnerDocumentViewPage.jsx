@@ -330,7 +330,7 @@ const OwnerDocumentViewPage = () => {
               </div>
             </div>
 
-            <div style={{ marginTop: "20px", background: "#fff", border: "1px solid #e8eaed", borderRadius: "14px", overflow: "hidden" }}>
+            <div style={{ marginTop: "20px", background: "#fff", border: "1px solid #e8eaed", borderRadius: "14px", overflow: "hidden", display: "flex", flexDirection: "column", height: "calc(100vh - 300px)", minHeight: "560px" }}>
               <div style={{ padding: "18px 22px", borderBottom: "1px solid #e8eaed", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
                 <div>
                   <div style={{ fontSize: "16px", fontWeight: 700, color: "#1a1a2e" }}>Preview</div>
@@ -373,23 +373,25 @@ const OwnerDocumentViewPage = () => {
                   </button>
                 </div>
               </div>
-              <div style={{ padding: "18px 22px" }}>
-                {previewMode === "notarized" ? (
-                  doc?.notarizedDataUrl ? (
-                    <PdfViewer file={doc.notarizedDataUrl} fileName={`${doc.name?.replace(/\.pdf$/i, "") || "document"}-notarized.pdf`} containerHeight="640px" />
-                  ) : doc?.notarized ? (
-                    <p style={{ color: "#777" }}>
-                      This document has been marked as notarized but no notarized PDF is currently available.
-                      You can download the notarized version from the button above.
-                    </p>
+              <div style={{ padding: "18px 22px", flex: 1, minHeight: 0, overflowY: "auto" }}>
+                <div style={{ height: "100%", minHeight: "420px", background: "#fff", border: "1px solid #e8eaed", borderRadius: "12px", overflow: "hidden" }}>
+                  {previewMode === "notarized" ? (
+                    doc?.notarizedDataUrl ? (
+                      <PdfViewer file={doc.notarizedDataUrl} fileName={`${doc.name?.replace(/\.pdf$/i, "") || "document"}-notarized.pdf`} containerHeight="100%" />
+                    ) : doc?.notarized ? (
+                      <p style={{ color: "#777" }}>
+                        This document has been marked as notarized but no notarized PDF is currently available.
+                        You can download the notarized version from the button above.
+                      </p>
+                    ) : (
+                      <p style={{ color: "#777" }}>No notarized document is available yet.</p>
+                    )
+                  ) : doc?.dataUrl ? (
+                    <PdfViewer file={doc.dataUrl} fileName={doc.name} containerHeight="100%" />
                   ) : (
-                    <p style={{ color: "#777" }}>No notarized document is available yet.</p>
-                  )
-                ) : doc?.dataUrl ? (
-                  <PdfViewer file={doc.dataUrl} fileName={doc.name} containerHeight="640px" />
-                ) : (
-                  <p style={{ color: "#777" }}>Unable to preview this document.</p>
-                )}
+                    <p style={{ color: "#777" }}>Unable to preview this document.</p>
+                  )}
+                </div>
               </div>
             </div>
           </>

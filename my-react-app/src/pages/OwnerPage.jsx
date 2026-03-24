@@ -30,6 +30,7 @@ const saveOwnerElements = (sessionId, elements) => {
 const OwnerPage = () => {
   const navigate = useNavigate();
   const editorScrollRef = useRef(null);
+  const pdfScrollRef = useRef(null);
   
   // Redirect to dashboard if no sessionId in URL
   useEffect(() => {
@@ -168,6 +169,19 @@ const OwnerPage = () => {
       setUploadedFileName(data.fileName || "document.pdf");
     });
 
+    socket.on("documentScrolled", (data) => {
+      if (data?.fromRole !== "notary") return;
+      const scrollTarget = pdfScrollRef.current || editorScrollRef.current;
+      if (!scrollTarget) return;
+      if (data?.scrollRatio === undefined && data?.scrollPosition === undefined) return;
+
+      const maxScrollable = Math.max(scrollTarget.scrollHeight - scrollTarget.clientHeight, 0);
+      const nextScrollTop = data?.scrollRatio !== undefined
+        ? maxScrollable * Number(data.scrollRatio)
+        : Number(data.scrollPosition);
+      scrollTarget.scrollTop = Number.isFinite(nextScrollTop) ? nextScrollTop : 0;
+    });
+
     socket.on("adminSessionTerminated", (data) => {
       if (!data?.sessionId || data.sessionId !== roomId) return;
       alert(data?.message || "Admin terminated this session.");
@@ -181,6 +195,7 @@ const OwnerPage = () => {
       socket.off("usersConnected");
       socket.off("documentShared");
       socket.off("sessionStatus");
+      socket.off("documentScrolled");
       socket.off("adminSessionTerminated");
     };
   }, []);
@@ -480,6 +495,7 @@ const OwnerPage = () => {
               >
                 <PdfViewer
                   file={uploadedFile}
+                  scrollContainerRef={pdfScrollRef}
                   containerHeight={`${EDITOR_HEIGHT}px`}
                   showControls={false}
                   pageWidth={EDITOR_WIDTH}

@@ -335,7 +335,9 @@ const OwnerDashboardPage = () => {
   const lastAutoSharedDocKeyRef = useRef("");
   const currentSessionIdRef = useRef(null);
   const editorScrollRef = useRef(null);
+  const pdfScrollRef = useRef(null);
   const fileInputRef = useRef(null);
+  const isApplyingScrollRef = useRef(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -860,11 +862,31 @@ const OwnerDashboardPage = () => {
       setEditorElements((prev) => prev.filter((element) => element.id !== elementId));
     };
 
+    const onDocumentScrolled = (data) => {
+      console.log('📍 [OWNER] Received scroll event:', data);
+      if (data?.fromRole !== "notary") return;
+      const scrollTarget = pdfScrollRef.current || editorScrollRef.current;
+      if (scrollTarget && (data?.scrollRatio !== undefined || data?.scrollPosition !== undefined)) {
+        const maxScrollable = Math.max(scrollTarget.scrollHeight - scrollTarget.clientHeight, 0);
+        const nextScrollTop = data?.scrollRatio !== undefined
+          ? maxScrollable * Number(data.scrollRatio)
+          : Number(data.scrollPosition);
+        console.log('📍 [OWNER] Applying scroll to position:', nextScrollTop);
+        isApplyingScrollRef.current = true;
+        scrollTarget.scrollTop = Number.isFinite(nextScrollTop) ? nextScrollTop : 0;
+        // Reset the flag after applying scroll
+        setTimeout(() => {
+          isApplyingScrollRef.current = false;
+        }, 100);
+      }
+    };
+
     socket.on("usersConnected", onUsersConnected);
     socket.on("documentShared", onDocumentShared);
     socket.on("elementAdded", onElementAdded);
     socket.on("elementUpdated", onElementUpdated);
     socket.on("elementRemoved", onElementRemoved);
+    socket.on("documentScrolled", onDocumentScrolled);
 
     socket.emit("joinSession", {
       roomId: sessionIdToJoin,
@@ -880,6 +902,7 @@ const OwnerDashboardPage = () => {
       socket.off("elementAdded", onElementAdded);
       socket.off("elementUpdated", onElementUpdated);
       socket.off("elementRemoved", onElementRemoved);
+      socket.off("documentScrolled", onDocumentScrolled);
     };
   }, [activeSessionDocId, activeSessions, previousSessions]);
 
@@ -1360,15 +1383,28 @@ const OwnerDashboardPage = () => {
 
             <div
               ref={editorScrollRef}
-              style={{ maxHeight: "70vh", borderRadius: "5px", backgroundColor: "#fff", flexShrink: 0 }}
+              style={{
+                height: "calc(100vh - 220px)",
+                minHeight: "520px",
+                borderRadius: "5px",
+                backgroundColor: "#fff",
+                overflowY: "auto",
+                position: "relative",
+              }}
+              onWheel={(e) => {
+                if (editorScrollRef.current) {
+                  e.preventDefault();
+                  editorScrollRef.current.scrollTop += e.deltaY;
+                }
+              }}
             >
               <h3 style={{ margin: "10px 15px" }}>Document Editor</h3>
               {uploadedFile ? (
                 <div
                   style={{
                     position: "relative",
-                    width: `${EDITOR_WIDTH}px`,
-                    height: `${EDITOR_HEIGHT}px`,
+                    width: "100%",
+                    minHeight: "100%",
                     backgroundColor: "white",
                     margin: "0 15px 15px 15px",
                     overflow: "hidden",
@@ -1377,7 +1413,8 @@ const OwnerDashboardPage = () => {
                   <PdfViewer
                     file={uploadedFile}
                     fileName={uploadedFileName}
-                    containerHeight={`${EDITOR_HEIGHT}px`}
+                    scrollContainerRef={pdfScrollRef}
+                    containerHeight="100%"
                     showControls={false}
                     pageWidth={EDITOR_WIDTH}
                     noInternalScroll={false}
@@ -1796,7 +1833,7 @@ const OwnerDashboardPage = () => {
           )}
 
           {/* Content */}
-          <div style={{ maxWidth: "900px", margin: "0 auto", padding: "32px 24px" }}>
+          <div style={{ maxWidth: "1340px", width: "100%", margin: "0 auto", padding: "32px 24px" }}>
             {docs.length === 0 ? (
           <div
             style={{
@@ -1827,15 +1864,17 @@ const OwnerDashboardPage = () => {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 120px 140px 140px 48px",
+                gridTemplateColumns: "minmax(280px, 1.8fr) 100px 170px 170px 110px",
+                gap: "12px",
                 padding: "12px 20px",
                 background: "#f9fafc",
-                borderBottom: "1px solid #e8eaed",
+                borderBottom: "2px solid #e8eaed",
                 fontSize: "12px",
                 fontWeight: 700,
-                color: "#888",
+                color: "#475569",
                 textTransform: "uppercase",
                 letterSpacing: "0.5px",
+                alignItems: "center",
               }}
             >
               <span>Document</span>
@@ -1896,11 +1935,13 @@ const OwnerDashboardPage = () => {
                   key={doc.id}
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr 120px 140px 140px 48px",
+                    gridTemplateColumns: "minmax(280px, 1.8fr) 100px 170px 170px 110px",
+                    gap: "12px",
                     padding: "14px 20px",
                     alignItems: "center",
-                    borderBottom: idx < docs.length - 1 ? "1px solid #f0f0f0" : "none",
+                    borderBottom: idx < docs.length - 1 ? "1px solid #e7ecf3" : "none",
                     transition: "background 0.1s",
+                    minHeight: "70px",
                   }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = "#fafafa")}
                   onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
@@ -2069,4 +2110,3 @@ const OwnerDashboardPage = () => {
 };
 
 export default OwnerDashboardPage;
-

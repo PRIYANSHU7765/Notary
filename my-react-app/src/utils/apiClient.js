@@ -859,6 +859,42 @@ async function fetchNotaryDashboardStats() {
   }
 }
 
+async function uploadSessionRecording(recordingPayload) {
+  const response = await fetchWithFallback('/api/recordings/upload', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(recordingPayload),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Failed to upload recording');
+  }
+
+  return payload;
+}
+
+async function fetchSessionRecordings({ sessionId, status, provider } = {}) {
+  const params = new URLSearchParams();
+  if (sessionId) params.append('sessionId', sessionId);
+  if (status) params.append('status', status);
+  if (provider) params.append('provider', provider);
+
+  const query = params.toString() ? `?${params.toString()}` : '';
+  const response = await fetchWithFallback(`/api/recordings${query}`, {
+    method: 'GET',
+  });
+
+  const payload = await response.json().catch(() => ([]));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Failed to fetch recordings');
+  }
+
+  return Array.isArray(payload) ? payload : [];
+}
+
 export {
   saveSignature,
   fetchSignatures,
@@ -899,6 +935,8 @@ export {
   debugFetchKbaSubmissions,
   scheduleOwnerDocumentMeeting,
   fetchNotaryDashboardStats,
+  uploadSessionRecording,
+  fetchSessionRecordings,
   API_BASE_URL,
 };
 

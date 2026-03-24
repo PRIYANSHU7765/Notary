@@ -1,0 +1,128 @@
+.notary-sidebar {
+  width: 232px;
+  height: 100vh;
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #03060c 0%, #050a13 100%);
+  color: #e5e7eb;
+  border-right: 1px solid rgba(148, 163, 184, 0.22);
+}
+.sidebar-header {
+  height: 58px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.sidebar-brand {
+  min-width: 0;
+}
+
+.brand-text {
+  display: inline-block;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: #f8fafc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-profile {
+  margin: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.profile-name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.profile-role {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.sidebar-menu {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.menu-item {
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #e2e8f0;
+  text-align: left;
+  padding: 0 12px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.menu-item:hover {
+  background: rgba(30, 41, 59, 0.65);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
+.menu-item.active {
+  background: linear-gradient(90deg, rgba(38, 56, 92, 0.75), rgba(24, 36, 60, 0.8));
+  border-color: rgba(96, 165, 250, 0.35);
+  color: #ffffff;
+}
+
+.menu-label {
+  display: inline-block;
+}
+
+.menu-label-collapsed {
+  display: inline-block;
+  width: 100%;
+  text-align: center;
+  font-weight: 600;
+}
+
+.sidebar-footer {
+  padding: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.logout-btn {
+  width: 100%;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(69, 10, 10, 0.35);
+  color: #fecaca;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.logout-btn:hover {
+  background: rgba(127, 29, 29, 0.4);
+}
+
+@media (max-width: 960px) {
+  .notary-sidebar {
+    width: 200px;
+  }
+}
