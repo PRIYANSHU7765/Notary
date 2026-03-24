@@ -118,9 +118,26 @@ function trimWhitespace(canvas, alphaThreshold = 8, whiteThreshold = 245) {
   const output = document.createElement("canvas");
   output.width = cropWidth;
   output.height = cropHeight;
-  output
-    .getContext("2d")
-    .drawImage(canvas, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+  const outputCtx = output.getContext("2d", { willReadFrequently: true });
+  outputCtx.drawImage(canvas, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+
+  // Make white-ish background transparent and keep ink strokes opaque.
+  const outputData = outputCtx.getImageData(0, 0, cropWidth, cropHeight);
+  const pixels = outputData.data;
+  for (let i = 0; i < pixels.length; i += 4) {
+    const r = pixels[i];
+    const g = pixels[i + 1];
+    const b = pixels[i + 2];
+    const a = pixels[i + 3];
+
+    const isWhite = r >= whiteThreshold && g >= whiteThreshold && b >= whiteThreshold;
+    const isTransparent = a <= alphaThreshold;
+
+    if (isWhite || isTransparent) {
+      pixels[i + 3] = 0;
+    }
+  }
+  outputCtx.putImageData(outputData, 0, 0);
 
   return output;
 }
