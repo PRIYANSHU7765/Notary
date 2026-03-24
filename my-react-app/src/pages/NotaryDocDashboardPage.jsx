@@ -427,24 +427,37 @@ const NotaryDocDashboardPage = () => {
 
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', position: 'relative' }}>
                     {(status === 'accepted' || status === 'session_started') ? (
-                      <button
-                        onClick={() => handleStartSession(doc)}
-                        disabled={Boolean(adminTerminationByDoc[doc.id])}
-                        style={{
-                          border: 'none',
-                          borderRadius: '8px',
-                          background: '#2563eb',
-                          color: '#ffffff',
-                          fontWeight: 600,
-                          padding: '8px 12px',
-                          cursor: adminTerminationByDoc[doc.id] ? 'not-allowed' : 'pointer',
-                          opacity: adminTerminationByDoc[doc.id] ? 0.6 : 1,
-                          fontSize: '12px',
-                        }}
-                        title="Start a session with this document"
-                      >
-                        Start Session
-                      </button>
+                      (() => {
+                        const scheduledAtMs = doc.scheduledAt ? new Date(doc.scheduledAt).getTime() : null;
+                        const isScheduledFuture = scheduledAtMs && Date.now() < scheduledAtMs;
+                        const disableStart = Boolean(adminTerminationByDoc[doc.id]) || isScheduledFuture;
+                        const titleText = adminTerminationByDoc[doc.id]
+                          ? adminTerminationByDoc[doc.id]
+                          : isScheduledFuture
+                            ? `Scheduled to start at ${new Date(doc.scheduledAt).toLocaleString()}`
+                            : 'Start a session with this document';
+
+                        return (
+                          <button
+                            onClick={() => handleStartSession(doc)}
+                            disabled={disableStart}
+                            style={{
+                              border: 'none',
+                              borderRadius: '8px',
+                              background: disableStart ? '#94a3b8' : '#2563eb',
+                              color: '#ffffff',
+                              fontWeight: 600,
+                              padding: '8px 12px',
+                              cursor: disableStart ? 'not-allowed' : 'pointer',
+                              opacity: disableStart ? 0.6 : 1,
+                              fontSize: '12px',
+                            }}
+                            title={titleText}
+                          >
+                            Start Session
+                          </button>
+                        )
+                      })()
                     ) : null}
                     {status !== 'accepted' && status !== 'session_started' ? (
                       <button
