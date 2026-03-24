@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import SignaturePad from "./SignaturePad";
+import SignatureExtractionModal from "./SignatureExtractionModal";
 import { deleteAsset, deleteSignature, fetchAssets, fetchSignatures, saveAsset, saveSignature } from "../utils/apiClient";
 
 const BASE_ASSETS = [
@@ -75,18 +76,27 @@ const SidebarAssets = ({
   uploadedAssets = [],
   onAssetBoxClick,
   assetScopeKey = "default",
+  sourcePdfDataUrl = "",
+  allowSignatureExtraction = false,
 }) => {
   const [showSignaturePad, setShowSignaturePad] = useState(false);
+  const [showSignatureExtraction, setShowSignatureExtraction] = useState(false);
+  const [extractionPdfDataUrl, setExtractionPdfDataUrl] = useState("");
   const [showTextModal, setShowTextModal] = useState(false);
   const [textInput, setTextInput] = useState("");
   const [assets, setAssets] = useState(() => getBaseAssets(userRole));
+  const [signatureExtractionMessage, setSignatureExtractionMessage] = useState("");
   const persistedAssetIdsRef = useRef(new Set());
+  const extractionFileInputRef = useRef(null);
 
   useEffect(() => {
     setAssets(getBaseAssets(userRole));
     setShowSignaturePad(false);
+    setShowSignatureExtraction(false);
+    setExtractionPdfDataUrl("");
     setShowTextModal(false);
     setTextInput("");
+    setSignatureExtractionMessage("");
   }, [userRole, assetScopeKey]);
 
   // Reset session-scoped assets when we switch sessions
@@ -341,6 +351,48 @@ const SidebarAssets = ({
     }
   };
 
+  const handleExtractedSignatureSave = async ({ imageDataUrl }) => {
+    if (!imageDataUrl) {
+      throw new Error("Signature image was not generated.");
+    }
+
+    await handleSignatureGenerated(imageDataUrl);
+    setExtractionPdfDataUrl("");
+    setSignatureExtractionMessage("Signature extracted and saved to your asset list.");
+    setTimeout(() => setSignatureExtractionMessage(""), 3200);
+  };
+
+  const handleOpenExtractionUpload = () => {
+    extractionFileInputRef.current?.click();
+  };
+
+  const handleExtractionFileChange = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const isImage = /\.(jpe?g|png)$/i.test(file.name) || /^(image\/png|image\/jpe?g)$/i.test(file.type);
+
+    if (!isPdf && !isImage) {
+      setSignatureExtractionMessage("Please upload PDF, PNG, JPG, or JPEG for signature extraction.");
+      setTimeout(() => setSignatureExtractionMessage(""), 3200);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const resultString = typeof reader.result === "string" ? reader.result : "";
+      setExtractionPdfDataUrl(resultString);
+      setShowSignatureExtraction(true);
+    };
+    reader.onerror = () => {
+      setSignatureExtractionMessage("Failed to read uploaded PDF. Please try again.");
+      setTimeout(() => setSignatureExtractionMessage(""), 3200);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSubmitTextAsset = () => {
     const trimmed = textInput.trim();
     if (!trimmed) return;
@@ -453,6 +505,24 @@ const SidebarAssets = ({
           >
             🅰️ Add Text
           </button>
+          {allowSignatureExtraction && (
+            <button
+              onClick={handleOpenExtractionUpload}
+              style={{
+                width: "100%",
+                padding: "10px",
+                marginBottom: "15px",
+                backgroundColor: "#0f766e",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+                fontWeight: "bold",
+              }}
+            >
+              ✂️ Upload PDF/PNG/JPG to Extract Signature
+            </button>
+          )}
           {userRole === "notary" && (
             <button
               onClick={() => onAssetBoxClick?.()}
@@ -600,6 +670,44 @@ const SidebarAssets = ({
           </div>
         </div>
       )}
+
+      {showSignatureExtraction && (
+        <SignatureExtractionModal
+          open={showSignatureExtraction}
+          pdfDataUrl={extractionPdfDataUrl || sourcePdfDataUrl}
+          title={`${userRole.charAt(0).toUpperCase() + userRole.slice(1)} Signature Extraction`}
+          onClose={() => {
+            setShowSignatureExtraction(false);
+            setExtractionPdfDataUrl("");
+          }}
+          onSave={handleExtractedSignatureSave}
+        />
+      )}
+
+      <input
+        ref={extractionFileInputRef}
+        type="file"
+        accept=".pdf,application/pdf,.png,image/png,.jpg,.jpeg,image/jpeg"
+        style={{ display: "none" }}
+        onChange={handleExtractionFileChange}
+      />
+
+      {signatureExtractionMessage ? (
+        <div
+          style={{
+            marginBottom: "10px",
+            borderRadius: "6px",
+            padding: "8px 10px",
+            fontSize: "12px",
+            fontWeight: 700,
+            background: "#ecfeff",
+            color: "#155e75",
+            border: "1px solid #a5f3fc",
+          }}
+        >
+          {signatureExtractionMessage}
+        </div>
+      ) : null}
 
       {/* Asset List */}
       {showAssets && (

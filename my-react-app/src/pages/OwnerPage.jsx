@@ -7,6 +7,7 @@ import SidebarAssets from "../components/SidebarAssets";
 import CanvasBoard from "../components/CanvasBoard";
 import ScreenRecorder from "../components/ScreenRecorder";
 import socket from "../socket/socket";
+import { fetchOwnerDocuments, payOwnerDocumentSession } from "../utils/apiClient";
 
 const EDITOR_WIDTH = 900;
 const EDITOR_HEIGHT = 1300;
@@ -78,6 +79,17 @@ const OwnerPage = () => {
   const [connectedUsers, setConnectedUsers] = useState([]);
   const [notaryConnected, setNotaryConnected] = useState(false);
   const [sessionStatus, setSessionStatus] = useState(null);
+  const [activeDocumentId, setActiveDocumentId] = useState("");
+  const [paymentStatus, setPaymentStatus] = useState("idle");
+  const [paymentRequest, setPaymentRequest] = useState(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("stripe");
+  const [paymentCardholderName, setPaymentCardholderName] = useState("");
+  const [paymentCardNumber, setPaymentCardNumber] = useState("");
+  const [paymentExpiry, setPaymentExpiry] = useState("");
+  const [paymentCvc, setPaymentCvc] = useState("");
+  const [isPaying, setIsPaying] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
+  const [lastPaidAmount, setLastPaidAmount] = useState(0);
 
   const authUser = (() => {
     try {
@@ -201,6 +213,37 @@ const OwnerPage = () => {
       navigate("/owner/doc/dashboard", { replace: true });
     });
 
+    socket.on("documentPaymentRequested", (data) => {
+      if (!data || data.sessionId !== roomId) return;
+      const amount = Number(data.sessionAmount || 0);
+      setActiveDocumentId(String(data.documentId || ""));
+      setPaymentRequest({
+        documentId: String(data.documentId || ""),
+        sessionId: String(data.sessionId || roomId),
+        amount: Number.isFinite(amount) ? amount : 0,
+        notaryName: String(data.notaryName || "Notary"),
+      });
+      setPaymentStatus("requested");
+      setPaymentError("");
+      setLastPaidAmount(0);
+    });
+
+    socket.on("ownerPaymentCompleted", (data) => {
+      if (!data || data.sessionId !== roomId) return;
+      const amount = Number(data.amountPaid || 0);
+      setPaymentStatus("paid");
+      setPaymentRequest((prev) =>
+        prev
+          ? {
+              ...prev,
+              amount: Number.isFinite(amount) ? amount : prev.amount,
+            }
+          : prev
+      );
+      setLastPaidAmount(Number.isFinite(amount) ? amount : 0);
+      setPaymentError("");
+    });
+
     return () => {
       socket.off("elementAdded");
       socket.off("elementUpdated");
@@ -210,8 +253,61 @@ const OwnerPage = () => {
       socket.off("sessionStatus");
       socket.off("documentScrolled");
       socket.off("adminSessionTerminated");
+      socket.off("documentPaymentRequested");
+      socket.off("ownerPaymentCompleted");
     };
   }, []);
+
+  useEffect(() => {
+    if (!sessionId) return;
+
+    let disposed = false;
+    const hydratePaymentRequest = async () => {
+      try {
+        const docs = await fetchOwnerDocuments({ sessionId });
+        if (disposed || !Array.isArray(docs) || docs.length === 0) return;
+
+        const paidDoc = docs.find((doc) => String(doc.paymentStatus || "").toLowerCase() === "paid");
+        if (paidDoc) {
+          const amount = Number(paidDoc.sessionAmount || 0);
+          setActiveDocumentId(String(paidDoc.id || ""));
+          setPaymentRequest({
+            documentId: String(paidDoc.id || ""),
+            sessionId,
+            amount: Number.isFinite(amount) ? amount : 0,
+            notaryName: String(paidDoc.notaryName || "Notary"),
+          });
+          setPaymentStatus("paid");
+          setLastPaidAmount(Number.isFinite(amount) ? amount : 0);
+          return;
+        }
+
+        const pendingDoc = docs.find(
+          (doc) =>
+            String(doc.status || "").toLowerCase() === "payment_pending" &&
+            String(doc.paymentStatus || "").toLowerCase() !== "paid"
+        );
+        if (pendingDoc) {
+          const amount = Number(pendingDoc.sessionAmount || 0);
+          setActiveDocumentId(String(pendingDoc.id || ""));
+          setPaymentRequest({
+            documentId: String(pendingDoc.id || ""),
+            sessionId,
+            amount: Number.isFinite(amount) ? amount : 0,
+            notaryName: String(pendingDoc.notaryName || "Notary"),
+          });
+          setPaymentStatus("requested");
+        }
+      } catch (error) {
+        console.warn("[OwnerPage] Failed to hydrate payment request:", error?.message || error);
+      }
+    };
+
+    hydratePaymentRequest();
+    return () => {
+      disposed = true;
+    };
+  }, [sessionId]);
 
   // Load owner elements from localStorage when sessionId is available
   useEffect(() => {
@@ -375,6 +471,58 @@ const OwnerPage = () => {
     socket.emit("elementRemoved", elementId);
   };
 
+  const handlePayNow = async () => {
+    if (!paymentRequest?.documentId) {
+      setPaymentError("Missing document for payment. Please refresh and try again.");
+      return;
+    }
+
+    const normalizedCardNumber = paymentCardNumber.replace(/\s+/g, "").trim();
+    if (!paymentCardholderName.trim()) {
+      setPaymentError("Cardholder name is required.");
+      return;
+    }
+    if (!/^\d{16}$/.test(normalizedCardNumber)) {
+      setPaymentError("Card number must be 16 digits.");
+      return;
+    }
+    if (!/^(0[1-9]|1[0-2])\/[0-9]{2}$/.test(paymentExpiry.trim())) {
+      setPaymentError("Expiry must be in MM/YY format.");
+      return;
+    }
+    if (!/^\d{3,4}$/.test(paymentCvc.trim())) {
+      setPaymentError("CVC must be 3 or 4 digits.");
+      return;
+    }
+
+    setPaymentError("");
+    setIsPaying(true);
+
+    try {
+      const transactionId = `${selectedPaymentMethod}-${Date.now()}`;
+      const methodLabel = selectedPaymentMethod === "stripe" ? "stripe" : "credit_card";
+      const response = await payOwnerDocumentSession(paymentRequest.documentId, {
+        transactionId,
+        paymentMethod: methodLabel,
+      });
+
+      const paidAmount = Number(response?.sessionAmount || paymentRequest.amount || 0);
+      setPaymentStatus("paid");
+      setLastPaidAmount(Number.isFinite(paidAmount) ? paidAmount : 0);
+      setPaymentCardholderName("");
+      setPaymentCardNumber("");
+      setPaymentExpiry("");
+      setPaymentCvc("");
+    } catch (error) {
+      setPaymentError(error?.message || "Payment failed. Please try again.");
+    } finally {
+      setIsPaying(false);
+    }
+  };
+
+  const paymentModalVisible = paymentStatus === "requested";
+  const paymentBannerVisible = paymentStatus === "requested" || paymentStatus === "paid";
+
   return (
     <div style={{ display: "flex", height: "100vh" }}>
       {/* Sidebar */}
@@ -384,6 +532,8 @@ const OwnerPage = () => {
         userId={authUser.userId}
         showAssets={true}
         uploadedAsset={uploadedAsset}
+        sourcePdfDataUrl={typeof uploadedFile === "string" ? uploadedFile : ""}
+        allowSignatureExtraction
       />
 
       {/* Main Content */}
@@ -422,6 +572,31 @@ const OwnerPage = () => {
               {notaryConnected ? "● Online" : "● Waiting..."}
             </span>
           </p>
+          {paymentBannerVisible && (
+            <p style={{ margin: "4px 0" }}>
+              <strong>Payment:</strong>{" "}
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  marginLeft: "6px",
+                  padding: "2px 8px",
+                  borderRadius: "12px",
+                  fontSize: "12px",
+                  fontWeight: "bold",
+                  backgroundColor: paymentStatus === "paid" ? "#e8f5e9" : "#fff3e0",
+                  color: paymentStatus === "paid" ? "#2e7d32" : "#e65100",
+                  border: paymentStatus === "paid" ? "1px solid #a5d6a7" : "1px solid #ffe0b2",
+                }}
+              >
+                {paymentStatus === "paid" ? "● Paid" : "● Payment requested"}
+              </span>
+              <span style={{ marginLeft: "8px", color: "#334155", fontWeight: 600 }}>
+                ${Number(paymentRequest?.amount || lastPaidAmount || 0).toFixed(2)}
+              </span>
+            </p>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginTop: "6px" }}>
             <button
               onClick={handleCopyNotaryLink}
@@ -540,6 +715,194 @@ const OwnerPage = () => {
           )}
         </div>
       </div>
+
+      {paymentModalVisible && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(15, 23, 42, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 140,
+            padding: "20px",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "520px",
+              background: "#ffffff",
+              borderRadius: "14px",
+              boxShadow: "0 18px 45px rgba(15, 23, 42, 0.28)",
+              padding: "20px",
+            }}
+          >
+            <h3 style={{ margin: "0 0 8px", color: "#0f172a" }}>Payment Required</h3>
+            <p style={{ margin: "0 0 10px", color: "#475569", fontSize: "14px" }}>
+              Notary marked this document as notarized. Complete payment to let the notary end the session.
+            </p>
+
+            <div
+              style={{
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                borderRadius: "10px",
+                padding: "12px",
+                marginBottom: "12px",
+              }}
+            >
+              <p style={{ margin: 0, fontSize: "13px", color: "#64748b" }}>Amount Due</p>
+              <p style={{ margin: "4px 0 0", fontSize: "26px", fontWeight: 800, color: "#0f172a" }}>
+                ${Number(paymentRequest?.amount || 0).toFixed(2)}
+              </p>
+              <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#64748b" }}>
+                Session: {sessionId} {activeDocumentId ? `| Document: ${activeDocumentId}` : ""}
+              </p>
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+              <button
+                type="button"
+                onClick={() => setSelectedPaymentMethod("stripe")}
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: selectedPaymentMethod === "stripe" ? "2px solid #2563eb" : "1px solid #cbd5e1",
+                  background: selectedPaymentMethod === "stripe" ? "#eff6ff" : "#fff",
+                  color: "#1e293b",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Pay with Stripe
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedPaymentMethod("card")}
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: selectedPaymentMethod === "card" ? "2px solid #2563eb" : "1px solid #cbd5e1",
+                  background: selectedPaymentMethod === "card" ? "#eff6ff" : "#fff",
+                  color: "#1e293b",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Pay with Credit/Debit Card
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gap: "8px", marginBottom: "12px" }}>
+              <input
+                type="text"
+                value={paymentCardholderName}
+                onChange={(e) => setPaymentCardholderName(e.target.value)}
+                placeholder="Cardholder name"
+                style={{
+                  width: "100%",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: "8px",
+                  padding: "10px 12px",
+                  fontSize: "14px",
+                }}
+              />
+              <input
+                type="text"
+                value={paymentCardNumber}
+                onChange={(e) => setPaymentCardNumber(e.target.value.replace(/[^\d\s]/g, "").slice(0, 19))}
+                placeholder="Card number (16 digits)"
+                style={{
+                  width: "100%",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: "8px",
+                  padding: "10px 12px",
+                  fontSize: "14px",
+                }}
+              />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                <input
+                  type="text"
+                  value={paymentExpiry}
+                  onChange={(e) => setPaymentExpiry(e.target.value.replace(/[^\d/]/g, "").slice(0, 5))}
+                  placeholder="MM/YY"
+                  style={{
+                    width: "100%",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "8px",
+                    padding: "10px 12px",
+                    fontSize: "14px",
+                  }}
+                />
+                <input
+                  type="password"
+                  value={paymentCvc}
+                  onChange={(e) => setPaymentCvc(e.target.value.replace(/[^\d]/g, "").slice(0, 4))}
+                  placeholder="CVC"
+                  style={{
+                    width: "100%",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "8px",
+                    padding: "10px 12px",
+                    fontSize: "14px",
+                  }}
+                />
+              </div>
+            </div>
+
+            {paymentError && (
+              <p style={{ margin: "0 0 10px", color: "#b91c1c", fontSize: "13px", fontWeight: 600 }}>
+                {paymentError}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={handlePayNow}
+              disabled={isPaying}
+              style={{
+                width: "100%",
+                padding: "11px 12px",
+                borderRadius: "8px",
+                border: "none",
+                backgroundColor: isPaying ? "#94a3b8" : "#16a34a",
+                color: "#fff",
+                fontWeight: 700,
+                cursor: isPaying ? "not-allowed" : "pointer",
+                fontSize: "14px",
+              }}
+            >
+              {isPaying
+                ? "Processing Payment..."
+                : `Pay with ${selectedPaymentMethod === "stripe" ? "Stripe" : "Credit/Debit Card"} - $${Number(paymentRequest?.amount || 0).toFixed(2)}`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {paymentStatus === "paid" && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: "20px",
+            right: "20px",
+            zIndex: 120,
+            background: "#16a34a",
+            color: "#fff",
+            padding: "12px 16px",
+            borderRadius: "10px",
+            boxShadow: "0 10px 24px rgba(22, 163, 74, 0.35)",
+            fontWeight: 700,
+            fontSize: "13px",
+          }}
+        >
+          Payment received. Notary can now end the session.
+        </div>
+      )}
     </div>
   );
 };

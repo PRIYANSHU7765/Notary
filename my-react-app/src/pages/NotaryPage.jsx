@@ -61,6 +61,9 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   const [uploadedAssets, setUploadedAssets] = useState([]);
   const [uploadedAsset, setUploadedAsset] = useState(null);
   const [isAssetBoxMode, setIsAssetBoxMode] = useState(false);
+  const [paymentState, setPaymentState] = useState('idle');
+  const [paymentAmount, setPaymentAmount] = useState(0);
+  const [paymentMethodUsed, setPaymentMethodUsed] = useState('');
   const [toastMessage, setToastMessage] = useState("");
   const [toastType, setToastType] = useState("info");
   const toastTimerRef = useRef(null);
@@ -105,11 +108,17 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
     if (!sessionId) {
       setUploadedAssets([]);
       setUploadedAsset(null);
+      setPaymentState('idle');
+      setPaymentAmount(0);
+      setPaymentMethodUsed('');
       return;
     }
 
     setUploadedAssets([]);
     setUploadedAsset(null);
+    setPaymentState('idle');
+    setPaymentAmount(0);
+    setPaymentMethodUsed('');
   }, [sessionId]);
 
   // Track backend connection status
@@ -281,6 +290,18 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         }, 200);
       };
 
+      const onDocumentPaymentRequested = (data) => {
+        if (!data) return;
+        const matchesDocument = data.documentId && documentId && String(data.documentId) === String(documentId);
+        const matchesSession = data.sessionId && data.sessionId === sessionId;
+        if (!matchesDocument && !matchesSession) return;
+
+        const requestedAmount = Number(data.sessionAmount || 0);
+        setPaymentState('pending');
+        setPaymentAmount(Number.isFinite(requestedAmount) ? requestedAmount : 0);
+        setPaymentMethodUsed('');
+      };
+
       // Register listeners BEFORE joining to avoid missing initial presence events.
       socket.on("elementAdded", onElementAdded);
       socket.on("elementUpdated", onElementUpdated);
@@ -294,10 +315,17 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       socket.on("adminSessionTerminated", onAdminSessionTerminated);
       socket.on("notarySessionStartRejected", onNotarySessionStartRejected);
       const onOwnerPaymentCompleted = (data) => {
-        if (!data?.documentId || !documentId) return;
-        if (String(data.documentId) !== String(documentId)) return;
+        if (!data) return;
+        const matchesDocument = data.documentId && documentId && String(data.documentId) === String(documentId);
+        const matchesSession = data.sessionId && data.sessionId === sessionId;
+        if (!matchesDocument && !matchesSession) return;
+        const paidAmount = Number(data.amountPaid || 0);
+        setPaymentState('paid');
+        setPaymentAmount(Number.isFinite(paidAmount) ? paidAmount : 0);
+        setPaymentMethodUsed(String(data.paymentMethod || '').trim());
         showToast(`Payment received: ${Number(data.amountPaid || 0).toFixed(2)}. You can now end the session.`, 'success', 4200);
       };
+      socket.on('documentPaymentRequested', onDocumentPaymentRequested);
       socket.on('ownerPaymentCompleted', onOwnerPaymentCompleted);
 
       console.log('📡 [NOTARY] Joining session:', {roomId: sessionId, role: 'notary', userId: authUser.userId});
@@ -374,7 +402,60 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         socket.off('ownerPaymentCompleted', onOwnerPaymentCompleted);
       };
     }
-  }, [sessionJoined, sessionId]);
+  }, [sessionJoined, sessionId, documentId, navigate]);
+
+  useEffect(() => {
+    if (!sessionJoined || !sessionId) return;
+
+    let isDisposed = false;
+    const hydratePaymentState = async () => {
+      try {
+        const docs = await fetchOwnerDocuments({ sessionId });
+        if (isDisposed || !Array.isArray(docs) || docs.length === 0) return;
+
+        const currentFileName = String(documentInfo?.fileName || '').trim().toLowerCase();
+        const preferredDoc =
+          docs.find((d) => String(d.id || '') === String(documentId || '')) ||
+          docs.find((d) => String(d.name || '').trim().toLowerCase() === currentFileName && String(d.status || '').toLowerCase() === 'payment_pending') ||
+          docs.find((d) => String(d.status || '').toLowerCase() === 'payment_pending') ||
+          docs.find((d) => String(d.name || '').trim().toLowerCase() === currentFileName) ||
+          docs.find((d) => String(d.status || '').toLowerCase() === 'session_started') ||
+          docs.find((d) => String(d.status || '').toLowerCase() === 'accepted') ||
+          docs[0];
+
+        if (!preferredDoc) return;
+
+        const resolvedAmount = Number(preferredDoc.sessionAmount || 0);
+        const resolvedPaymentStatus = String(preferredDoc.paymentStatus || '').trim().toLowerCase();
+        const resolvedStatus = String(preferredDoc.status || '').trim().toLowerCase();
+
+        if (resolvedPaymentStatus === 'paid') {
+          setPaymentState('paid');
+          setPaymentAmount(Number.isFinite(resolvedAmount) ? resolvedAmount : 0);
+          setPaymentMethodUsed(String(preferredDoc.paymentMethod || '').trim());
+          return;
+        }
+
+        if (resolvedStatus === 'payment_pending' || resolvedPaymentStatus === 'pending') {
+          setPaymentState('pending');
+          setPaymentAmount(Number.isFinite(resolvedAmount) ? resolvedAmount : 0);
+          setPaymentMethodUsed('');
+          return;
+        }
+
+        setPaymentState('idle');
+        setPaymentAmount(0);
+        setPaymentMethodUsed('');
+      } catch (error) {
+        console.warn('[NOTARY] Failed to hydrate payment state:', error?.message || error);
+      }
+    };
+
+    hydratePaymentState();
+    return () => {
+      isDisposed = true;
+    };
+  }, [sessionJoined, sessionId, documentId, documentInfo?.fileName]);
 
   // Scroll synchronization: emit notary's scroll position to owner.
   // Listen to outer editor container which receives all scroll events.
@@ -537,6 +618,16 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   };
 
   const handleMarkNotarized = async () => {
+    if (paymentState === 'pending') {
+      showToast('Owner payment is already pending for this session.', 'info');
+      return;
+    }
+
+    if (paymentState === 'paid') {
+      showToast('Payment is already received. Please end the session.', 'info');
+      return;
+    }
+
     showToast('Notarization started…', 'info');
 
     let targetDocumentId = documentId;
@@ -591,8 +682,14 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       );
       console.log('✅ Notarization marked complete for', targetDocumentId);
       if (normalizedAmount > 0) {
+        setPaymentState('pending');
+        setPaymentAmount(normalizedAmount);
+        setPaymentMethodUsed('');
         showToast(`✅ Document marked. Waiting for owner payment of ${normalizedAmount.toFixed(2)}.`, 'info', 4200);
       } else {
+        setPaymentState('paid');
+        setPaymentAmount(0);
+        setPaymentMethodUsed('');
         showToast('✅ Document notarized successfully!', 'success');
       }
     } catch (error) {
@@ -770,6 +867,9 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
     );
   }
 
+  const canMarkNotarized = ownerConnected && paymentState === 'idle';
+  const markNotarizedLabel = paymentState === 'pending' ? 'Waiting for Payment...' : paymentState === 'paid' ? 'Payment Received' : 'Mark as Notarized';
+
   return (
     <div style={{ display: "flex", height: "100vh" }}>
       {/* Sidebar */}
@@ -807,20 +907,28 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
               </span>
               <button
                 onClick={handleMarkNotarized}
-                disabled={!ownerConnected}
+                disabled={!canMarkNotarized}
                 style={{
                   padding: "6px 10px",
-                  backgroundColor: ownerConnected ? "#2563eb" : "#9ca3af",
+                  backgroundColor: canMarkNotarized ? "#2563eb" : "#9ca3af",
                   color: "white",
                   border: "none",
                   borderRadius: "6px",
-                  cursor: ownerConnected ? "pointer" : "not-allowed",
+                  cursor: canMarkNotarized ? "pointer" : "not-allowed",
                   fontSize: "12px",
                   fontWeight: "600",
                 }}
-                title={ownerConnected ? "Mark document as notarized" : "Connect to owner to complete notarization"}
+                title={
+                  paymentState === 'pending'
+                    ? 'Waiting for owner payment'
+                    : paymentState === 'paid'
+                    ? 'Payment received for this document'
+                    : ownerConnected
+                    ? 'Mark document as notarized'
+                    : 'Connect to owner to complete notarization'
+                }
               >
-                Mark Notarized
+                {markNotarizedLabel}
               </button>
               <button
                 onClick={handleEndSession}
@@ -861,6 +969,31 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
           {documentInfo && (
             <p style={{ margin: "4px 0" }}>
               <strong>Document:</strong> {documentInfo.fileName}
+            </p>
+          )}
+          {(paymentState === 'pending' || paymentState === 'paid') && (
+            <p style={{ margin: '4px 0' }}>
+              <strong>Payment:</strong>{' '}
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  backgroundColor: paymentState === 'paid' ? '#e8f5e9' : '#fff3e0',
+                  color: paymentState === 'paid' ? '#2e7d32' : '#e65100',
+                  border: paymentState === 'paid' ? '1px solid #a5d6a7' : '1px solid #ffe0b2',
+                }}
+              >
+                {paymentState === 'paid' ? '● Paid' : '● Waiting for payment'}
+              </span>
+              <span style={{ marginLeft: '8px', color: '#334155', fontWeight: 600 }}>
+                {paymentAmount > 0 ? `$${paymentAmount.toFixed(2)}` : '$0.00'}
+                {paymentState === 'paid' && paymentMethodUsed ? ` via ${paymentMethodUsed}` : ''}
+              </span>
             </p>
           )}
         </div>
