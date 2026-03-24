@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NotaryWorkspaceShell from '../components/NotaryWorkspaceShell';
-import { fetchOwnerDocuments } from '../utils/apiClient';
+import { fetchOwnerDocuments, fetchSessionRecordings } from '../utils/apiClient';
 import './NotaryWorkspacePages.css';
 
 const normalize = (value) => String(value || '').trim().toLowerCase();
@@ -18,6 +18,11 @@ const NotaryMeetingsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [documents, setDocuments] = useState([]);
+  const [selectedPastSession, setSelectedPastSession] = useState(null);
+  const [activeDetailsTab, setActiveDetailsTab] = useState('notary');
+  const [recordingsLoading, setRecordingsLoading] = useState(false);
+  const [recordingsError, setRecordingsError] = useState('');
+  const [selectedSessionRecordings, setSelectedSessionRecordings] = useState([]);
 
   useEffect(() => {
     let active = true;
@@ -63,6 +68,34 @@ const NotaryMeetingsPage = () => {
     return { current, upcoming, past };
   }, [documents]);
 
+  const handleOpenPastSessionDetails = async (row) => {
+    const sessionId = String(row?.sessionId || '').trim();
+    if (!sessionId) return;
+
+    setSelectedPastSession(row);
+    setActiveDetailsTab('notary');
+    setRecordingsError('');
+    setSelectedSessionRecordings([]);
+    setRecordingsLoading(true);
+
+    try {
+      const recordings = await fetchSessionRecordings({ sessionId });
+      setSelectedSessionRecordings(Array.isArray(recordings) ? recordings : []);
+    } catch (err) {
+      setRecordingsError(err?.message || 'Unable to load session recording');
+    } finally {
+      setRecordingsLoading(false);
+    }
+  };
+
+  const handleClosePastSessionDetails = () => {
+    setSelectedPastSession(null);
+    setActiveDetailsTab('notary');
+    setRecordingsLoading(false);
+    setRecordingsError('');
+    setSelectedSessionRecordings([]);
+  };
+
   const renderMeetingTable = (rows, type) => {
     if (rows.length === 0) {
       return <div className="empty-block">No {type} sessions found.</div>;
@@ -90,7 +123,14 @@ const NotaryMeetingsPage = () => {
                 <td>{formatDate(row.scheduledAt)}</td>
                 <td>{row.status || row.notaryReview || '-'}</td>
                 <td>
-                  {row.sessionId ? (
+                  {type === 'past' && row.sessionId ? (
+                    <button
+                      className="notary-btn"
+                      onClick={() => handleOpenPastSessionDetails(row)}
+                    >
+                      View
+                    </button>
+                  ) : row.sessionId ? (
                     <button
                       className="notary-btn secondary"
                       onClick={() => navigate(`/notary?sessionId=${encodeURIComponent(row.sessionId)}&role=notary`)}
@@ -155,10 +195,149 @@ const NotaryMeetingsPage = () => {
               <div className="notary-card-header">Past Sessions</div>
               <div className="notary-card-body">{renderMeetingTable(categorized.past, 'past')}</div>
             </section>
+
+            <SessionDetailsModal
+              session={selectedPastSession}
+              activeTab={activeDetailsTab}
+              onChangeTab={setActiveDetailsTab}
+              onClose={handleClosePastSessionDetails}
+              recordings={selectedSessionRecordings}
+              recordingsLoading={recordingsLoading}
+              recordingsError={recordingsError}
+            />
           </>
         ) : null}
       </div>
     </NotaryWorkspaceShell>
+  );
+};
+
+const SessionDetailsModal = ({
+  session,
+  activeTab,
+  onChangeTab,
+  onClose,
+  recordings,
+  recordingsLoading,
+  recordingsError,
+}) => {
+  if (!session) return null;
+
+  const latestRecording = Array.isArray(recordings) && recordings.length > 0 ? recordings[0] : null;
+  const recordingUrl = latestRecording?.shareUrl || latestRecording?.providerUrl || '';
+  const meetingTitle = session?.sessionId || 'Unknown meeting';
+  const meetingStatus = session?.status || session?.notaryReview || '-';
+
+  const formatDuration = (durationMs) => {
+    const ms = Number(durationMs || 0);
+    if (!Number.isFinite(ms) || ms <= 0) return '-';
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+  };
+
+  return (
+    <div className="session-details-overlay" role="dialog" aria-modal="true" aria-label="Session details">
+      <div className="session-details-panel">
+        <div className="session-details-header">
+          <button type="button" className="session-details-close" onClick={onClose} aria-label="Close details">
+            Close
+          </button>
+          <h3>Notarization details</h3>
+        </div>
+
+        <div className="session-details-tabs" role="tablist" aria-label="Session detail tabs">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'notary'}
+            className={activeTab === 'notary' ? 'active' : ''}
+            onClick={() => onChangeTab('notary')}
+          >
+            NOTARY
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'video'}
+            className={activeTab === 'video' ? 'active' : ''}
+            onClick={() => onChangeTab('video')}
+          >
+            VIDEO
+          </button>
+        </div>
+
+        <div className="session-details-body">
+          {activeTab === 'notary' ? (
+            <div className="session-notary-content">
+              <h4>
+                Meeting - {meetingTitle}
+                <span>{formatDate(session?.notarizedAt || session?.scheduledAt || latestRecording?.createdAt)}</span>
+              </h4>
+
+              <div className="session-field-grid">
+                <div>
+                  <p className="label">Notarial act</p>
+                  <p>Jurat</p>
+                </div>
+                <div>
+                  <p className="label">Notary public</p>
+                  <p>{session?.notaryName || 'Notary'}</p>
+                </div>
+                <div>
+                  <p className="label">Owner</p>
+                  <p>{session?.ownerName || session?.ownerId || '-'}</p>
+                </div>
+                <div>
+                  <p className="label">Platform</p>
+                  <p>MOBILE_WEB</p>
+                </div>
+                <div>
+                  <p className="label">Meeting status</p>
+                  <p className="status-ok">Completed ({meetingStatus})</p>
+                </div>
+                <div>
+                  <p className="label">Session duration</p>
+                  <p>{formatDuration(latestRecording?.durationMs)}</p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="session-video-content">
+              {recordingsLoading ? <p className="muted">Loading recording...</p> : null}
+              {!recordingsLoading && recordingsError ? <p className="muted">{recordingsError}</p> : null}
+              {!recordingsLoading && !recordingsError && !latestRecording ? (
+                <p className="muted">No recording found for this session.</p>
+              ) : null}
+
+              {!recordingsLoading && !recordingsError && latestRecording ? (
+                <>
+                  <p className="muted">
+                    Recording: {latestRecording.fileName || 'session-recording'}
+                    {latestRecording.createdAt ? ` • ${formatDate(latestRecording.createdAt)}` : ''}
+                  </p>
+
+                  {recordingUrl ? (
+                    <video controls className="session-video-player" src={recordingUrl} preload="metadata">
+                      Your browser does not support video playback.
+                    </video>
+                  ) : (
+                    <p className="muted">Recording exists but no playable URL is available.</p>
+                  )}
+
+                  {recordingUrl ? (
+                    <a className="notary-btn secondary session-video-link" href={recordingUrl} target="_blank" rel="noreferrer">
+                      Open recording in new tab
+                    </a>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 };
 
