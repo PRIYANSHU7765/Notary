@@ -344,13 +344,18 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
     }
   }, [sessionJoined, sessionId]);
 
-  // Scroll synchronization: emit notary's scroll position to owner
+  // Scroll synchronization: emit notary's scroll position to owner.
+  // Listen to outer editor container which receives all scroll events.
   useEffect(() => {
     if (!sessionJoined || !sessionId) return;
 
     const getScrollMetrics = () => {
-      const el = pdfScrollRef.current || editorScrollRef.current;
-      if (!el) return { scrollPosition: 0, scrollRatio: 0 };
+      // Prioritize editor scroll ref (outer scrollable container)
+      const el = editorScrollRef.current;
+      if (!el) {
+        console.warn('[NOTARY SCROLL] editorScrollRef not set');
+        return { scrollPosition: 0, scrollRatio: 0 };
+      }
       const maxScrollable = Math.max(el.scrollHeight - el.clientHeight, 0);
       const scrollPosition = el.scrollTop;
       const scrollRatio = maxScrollable > 0 ? scrollPosition / maxScrollable : 0;
@@ -363,6 +368,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       }
       scrollEmitTimerRef.current = window.setTimeout(() => {
         const { scrollPosition, scrollRatio } = getScrollMetrics();
+        console.log('[NOTARY SCROLL] Emitting scroll:', { scrollPosition, scrollRatio, sessionId });
         socket.emit("documentScrolled", {
           sessionId,
           scrollPosition,
@@ -372,17 +378,20 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       }, 50); // Throttle scroll events
     };
 
-    const target = pdfScrollRef.current || editorScrollRef.current;
-    if (!target) return;
+    const target = editorScrollRef.current;
+    if (!target) {
+      console.warn('[NOTARY SCROLL] Cannot attach listener - editorScrollRef not set');
+      return;
+    }
 
+    console.log('[NOTARY SCROLL] Attaching scroll listener to editorScrollRef');
     target.addEventListener("scroll", handleScroll);
     return () => {
+      console.log('[NOTARY SCROLL] Removing scroll listener from editorScrollRef');
       if (scrollEmitTimerRef.current) {
         window.clearTimeout(scrollEmitTimerRef.current);
       }
-      if (target) {
-        target.removeEventListener("scroll", handleScroll);
-      }
+      target.removeEventListener("scroll", handleScroll);
     };
   }, [sessionJoined, sessionId, pdfDataUrl]);
 

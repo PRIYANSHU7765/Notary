@@ -863,22 +863,36 @@ const OwnerDashboardPage = () => {
     };
 
     const onDocumentScrolled = (data) => {
-      console.log('📍 [OWNER] Received scroll event:', data);
-      if (data?.fromRole !== "notary") return;
-      const scrollTarget = pdfScrollRef.current || editorScrollRef.current;
-      if (scrollTarget && (data?.scrollRatio !== undefined || data?.scrollPosition !== undefined)) {
-        const maxScrollable = Math.max(scrollTarget.scrollHeight - scrollTarget.clientHeight, 0);
-        const nextScrollTop = data?.scrollRatio !== undefined
-          ? maxScrollable * Number(data.scrollRatio)
-          : Number(data.scrollPosition);
-        console.log('📍 [OWNER] Applying scroll to position:', nextScrollTop);
-        isApplyingScrollRef.current = true;
-        scrollTarget.scrollTop = Number.isFinite(nextScrollTop) ? nextScrollTop : 0;
-        // Reset the flag after applying scroll
-        setTimeout(() => {
-          isApplyingScrollRef.current = false;
-        }, 100);
-      }
+      if (data?.fromRole && data.fromRole !== "notary") return;
+      if (data?.scrollRatio === undefined && data?.scrollPosition === undefined) return;
+
+      const editorTarget = editorScrollRef.current;
+      const pdfTarget = pdfScrollRef.current;
+      const candidates = [editorTarget, pdfTarget].filter(Boolean);
+      if (!candidates.length) return;
+
+      // Pick the element with real scroll range; this avoids binding to a non-scrollable inner PDF wrapper.
+      const scrollTarget = candidates.reduce((best, current) => {
+        const bestRange = Math.max(best.scrollHeight - best.clientHeight, 0);
+        const currentRange = Math.max(current.scrollHeight - current.clientHeight, 0);
+        return currentRange > bestRange ? current : best;
+      });
+
+      const maxScrollable = Math.max(scrollTarget.scrollHeight - scrollTarget.clientHeight, 0);
+      const nextScrollTop = data?.scrollRatio !== undefined
+        ? maxScrollable * Number(data.scrollRatio)
+        : Number(data.scrollPosition);
+
+      isApplyingScrollRef.current = true;
+      const finalScrollTop = Number.isFinite(nextScrollTop) ? nextScrollTop : 0;
+
+      // Keep both refs aligned when both exist.
+      if (editorTarget) editorTarget.scrollTop = finalScrollTop;
+      if (pdfTarget) pdfTarget.scrollTop = finalScrollTop;
+
+      setTimeout(() => {
+        isApplyingScrollRef.current = false;
+      }, 100);
     };
 
     socket.on("usersConnected", onUsersConnected);

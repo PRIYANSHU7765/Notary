@@ -100,6 +100,7 @@ const OwnerPage = () => {
   }, []);
 
   useEffect(() => {
+    console.log('📡 [OWNER] Setting up socket listeners');
     // Reuse existing session on refresh when possible.
     const params = new URLSearchParams(window.location.search);
     const roomIdFromUrl = params.get("sessionId");
@@ -170,16 +171,28 @@ const OwnerPage = () => {
     });
 
     socket.on("documentScrolled", (data) => {
-      if (data?.fromRole !== "notary") return;
-      const scrollTarget = pdfScrollRef.current || editorScrollRef.current;
-      if (!scrollTarget) return;
-      if (data?.scrollRatio === undefined && data?.scrollPosition === undefined) return;
+      console.log('[OWNER SCROLL] Received documentScrolled event:', JSON.stringify(data));
+      const scrollTarget = editorScrollRef.current || pdfScrollRef.current;
+      if (!scrollTarget) {
+        console.warn('[OWNER SCROLL] ❌ No scroll target found');
+        console.warn('[OWNER SCROLL] editorScrollRef?.current:', editorScrollRef.current);
+        console.warn('[OWNER SCROLL] pdfScrollRef?.current:', pdfScrollRef.current);
+        return;
+      }
+      console.log('[OWNER SCROLL] ✅ Found scroll target, scrollHeight:', scrollTarget.scrollHeight, 'clientHeight:', scrollTarget.clientHeight);
+      
+      if (data?.scrollRatio === undefined && data?.scrollPosition === undefined) {
+        console.warn('[OWNER SCROLL] No scroll metrics in data');
+        return;
+      }
 
       const maxScrollable = Math.max(scrollTarget.scrollHeight - scrollTarget.clientHeight, 0);
       const nextScrollTop = data?.scrollRatio !== undefined
         ? maxScrollable * Number(data.scrollRatio)
         : Number(data.scrollPosition);
-      scrollTarget.scrollTop = Number.isFinite(nextScrollTop) ? nextScrollTop : 0;
+      const finalScrollTop = Number.isFinite(nextScrollTop) ? nextScrollTop : 0;
+      console.log('[OWNER SCROLL] ✅ Applying scroll - container scrollHeight:', scrollTarget.scrollHeight, 'setting scrollTop to:', finalScrollTop, 'from scrollRatio:', data?.scrollRatio);
+      scrollTarget.scrollTop = finalScrollTop;
     });
 
     socket.on("adminSessionTerminated", (data) => {

@@ -4484,19 +4484,29 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle document scroll synchronization
+  // Handle document scroll synchronization (notary scroll always syncs to owner, live meeting not required)
   socket.on('documentScrolled', (data) => {
     const userSession = userSessions.get(socket.id);
-    if (userSession && (data?.scrollPosition !== undefined || data?.scrollRatio !== undefined)) {
-      console.log(`📍 Scroll event from ${userSession.username} (${userSession.role}):`, data.scrollPosition);
-      socket.to(userSession.roomId).emit('documentScrolled', {
-        scrollPosition: data.scrollPosition,
-        scrollRatio: data.scrollRatio,
-        sessionId: data.sessionId,
-        timestamp: data.timestamp,
-        fromRole: userSession.role,
-      });
+    if (!userSession) {
+      console.warn(`❌ [SCROLL SYNC] No session for socket ${socket.id}`);
+      return;
     }
+    if (userSession.role !== 'notary') {
+      console.log(`⏭️ [SCROLL SYNC] Ignoring scroll from ${userSession.role} (only relay notary scroll)`);
+      return;
+    }
+    if (data?.scrollPosition === undefined && data?.scrollRatio === undefined) {
+      console.warn(`⏭️ [SCROLL SYNC] No scroll metrics in payload`);
+      return;
+    }
+    console.log(`📍 [SCROLL SYNC] Relaying scroll from ${userSession.username} to room ${userSession.roomId}:`, { scrollRatio: data?.scrollRatio });
+    socket.to(userSession.roomId).emit('documentScrolled', {
+      scrollPosition: data.scrollPosition,
+      scrollRatio: data.scrollRatio,
+      sessionId: data.sessionId,
+      timestamp: data.timestamp,
+      fromRole: userSession.role,
+    });
   });
 
   // Handle user disconnect
