@@ -487,6 +487,9 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
       if (status?.sessionId !== sessionId) return;
       const nextAvailable = Boolean(status?.liveMeetingActive);
       setIsRemoteLiveAvailable(nextAvailable);
+      if (isOwnerRole) {
+        setIsLiveMeeting(nextAvailable);
+      }
       if (!nextAvailable) {
         stopOwnerLiveMeetingView();
       }
@@ -496,6 +499,7 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
       if (data?.sessionId !== sessionId) return;
       if (isOwnerRole) {
         setIsRemoteLiveAvailable(true);
+        setIsLiveMeeting(true);
       }
     };
 
@@ -503,6 +507,7 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
       if (data?.sessionId !== sessionId) return;
       if (isOwnerRole) {
         setIsRemoteLiveAvailable(false);
+        setIsLiveMeeting(false);
         stopOwnerLiveMeetingView();
       }
       if (isNotaryRole) {
