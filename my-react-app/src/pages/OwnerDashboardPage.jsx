@@ -336,6 +336,7 @@ const OwnerDashboardPage = () => {
   const currentSessionIdRef = useRef(null);
   const editorScrollRef = useRef(null);
   const pdfScrollRef = useRef(null);
+  const scrollEmitTimerRef = useRef(null);
   const fileInputRef = useRef(null);
   const isApplyingScrollRef = useRef(false);
   const navigate = useNavigate();
@@ -919,6 +920,61 @@ const OwnerDashboardPage = () => {
       socket.off("documentScrolled", onDocumentScrolled);
     };
   }, [activeSessionDocId, activeSessions, previousSessions]);
+
+  // Emit owner scroll updates so notary view stays synchronized bidirectionally.
+  useEffect(() => {
+    if (!activeSessionDocId || !sessionJoined) return;
+
+    const activeSessionId =
+      activeSessions[activeSessionDocId] ||
+      previousSessions[activeSessionDocId] ||
+      currentSessionIdRef.current;
+    if (!activeSessionId) return;
+
+    const getScrollMetrics = () => {
+      const candidates = [editorScrollRef.current, pdfScrollRef.current].filter(Boolean);
+      if (!candidates.length) return { scrollPosition: 0, scrollRatio: 0 };
+
+      const target = candidates.reduce((best, current) => {
+        const bestRange = Math.max(best.scrollHeight - best.clientHeight, 0);
+        const currentRange = Math.max(current.scrollHeight - current.clientHeight, 0);
+        return currentRange > bestRange ? current : best;
+      });
+
+      const maxScrollable = Math.max(target.scrollHeight - target.clientHeight, 0);
+      const scrollPosition = target.scrollTop;
+      const scrollRatio = maxScrollable > 0 ? scrollPosition / maxScrollable : 0;
+      return { scrollPosition, scrollRatio };
+    };
+
+    const handleScroll = () => {
+      if (isApplyingScrollRef.current) return;
+      if (scrollEmitTimerRef.current) {
+        window.clearTimeout(scrollEmitTimerRef.current);
+      }
+
+      scrollEmitTimerRef.current = window.setTimeout(() => {
+        const { scrollPosition, scrollRatio } = getScrollMetrics();
+        socket.emit("documentScrolled", {
+          sessionId: activeSessionId,
+          scrollPosition,
+          scrollRatio,
+          timestamp: Date.now(),
+        });
+      }, 50);
+    };
+
+    const targets = [editorScrollRef.current, pdfScrollRef.current].filter(Boolean);
+    if (!targets.length) return;
+
+    targets.forEach((target) => target.addEventListener("scroll", handleScroll));
+    return () => {
+      if (scrollEmitTimerRef.current) {
+        window.clearTimeout(scrollEmitTimerRef.current);
+      }
+      targets.forEach((target) => target.removeEventListener("scroll", handleScroll));
+    };
+  }, [activeSessionDocId, activeSessions, previousSessions, sessionJoined, uploadedFile]);
 
   // Cleanup effect: Emit ownerLeftSession when exiting a session
   useEffect(() => {

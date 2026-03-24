@@ -67,6 +67,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   const editorScrollRef = useRef(null);
   const pdfScrollRef = useRef(null);
   const scrollEmitTimerRef = useRef(null);
+  const isApplyingScrollRef = useRef(false);
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
 
@@ -177,6 +178,35 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         setDocumentInfo({ fileName: data.fileName });
       };
 
+      const onDocumentScrolled = (data) => {
+        if (data?.fromRole && data.fromRole !== "owner") return;
+        if (data?.scrollRatio === undefined && data?.scrollPosition === undefined) return;
+
+        const editorTarget = editorScrollRef.current;
+        const pdfTarget = pdfScrollRef.current;
+        const candidates = [editorTarget, pdfTarget].filter(Boolean);
+        if (!candidates.length) return;
+
+        const scrollTarget = candidates.reduce((best, current) => {
+          const bestRange = Math.max(best.scrollHeight - best.clientHeight, 0);
+          const currentRange = Math.max(current.scrollHeight - current.clientHeight, 0);
+          return currentRange > bestRange ? current : best;
+        });
+
+        const maxScrollable = Math.max(scrollTarget.scrollHeight - scrollTarget.clientHeight, 0);
+        const nextScrollTop = data?.scrollRatio !== undefined
+          ? maxScrollable * Number(data.scrollRatio)
+          : Number(data.scrollPosition);
+        const finalScrollTop = Number.isFinite(nextScrollTop) ? nextScrollTop : 0;
+
+        isApplyingScrollRef.current = true;
+        if (editorTarget) editorTarget.scrollTop = finalScrollTop;
+        if (pdfTarget) pdfTarget.scrollTop = finalScrollTop;
+        setTimeout(() => {
+          isApplyingScrollRef.current = false;
+        }, 100);
+      };
+
       const onOwnerLeftSession = (data) => {
         console.log("👤 [NOTARY] Owner left session:", data.sessionId);
         if (data.sessionId === sessionId) {
@@ -259,6 +289,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       socket.on("sessionStatus", onSessionStatus);
       socket.on("documentUploaded", onDocumentUploaded);
       socket.on("documentShared", onDocumentShared);
+      socket.on("documentScrolled", onDocumentScrolled);
       socket.on("ownerLeftSession", onOwnerLeftSession);
       socket.on("adminSessionTerminated", onAdminSessionTerminated);
       socket.on("notarySessionStartRejected", onNotarySessionStartRejected);
@@ -339,6 +370,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         socket.off("ownerLeftSession", onOwnerLeftSession);
         socket.off("adminSessionTerminated", onAdminSessionTerminated);
         socket.off("notarySessionStartRejected", onNotarySessionStartRejected);
+        socket.off("documentScrolled", onDocumentScrolled);
         socket.off('ownerPaymentCompleted', onOwnerPaymentCompleted);
       };
     }
@@ -363,6 +395,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
     };
 
     const handleScroll = () => {
+      if (isApplyingScrollRef.current) return;
       if (scrollEmitTimerRef.current) {
         window.clearTimeout(scrollEmitTimerRef.current);
       }

@@ -4484,22 +4484,22 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle document scroll synchronization (notary scroll always syncs to owner, live meeting not required)
+  // Handle document scroll synchronization (bidirectional between owner and notary)
   socket.on('documentScrolled', (data) => {
     const userSession = userSessions.get(socket.id);
     if (!userSession) {
       console.warn(`❌ [SCROLL SYNC] No session for socket ${socket.id}`);
       return;
     }
-    if (userSession.role !== 'notary') {
-      console.log(`⏭️ [SCROLL SYNC] Ignoring scroll from ${userSession.role} (only relay notary scroll)`);
+    if (userSession.role !== 'notary' && userSession.role !== 'owner') {
+      console.log(`⏭️ [SCROLL SYNC] Ignoring scroll from unsupported role: ${userSession.role}`);
       return;
     }
     if (data?.scrollPosition === undefined && data?.scrollRatio === undefined) {
       console.warn(`⏭️ [SCROLL SYNC] No scroll metrics in payload`);
       return;
     }
-    console.log(`📍 [SCROLL SYNC] Relaying scroll from ${userSession.username} to room ${userSession.roomId}:`, { scrollRatio: data?.scrollRatio });
+    console.log(`📍 [SCROLL SYNC] Relaying scroll from ${userSession.username} (${userSession.role}) to room ${userSession.roomId}:`, { scrollRatio: data?.scrollRatio });
     socket.to(userSession.roomId).emit('documentScrolled', {
       scrollPosition: data.scrollPosition,
       scrollRatio: data.scrollRatio,
