@@ -287,6 +287,183 @@ const NotarizeConfirmModal = ({ doc, onClose, onConfirm }) => {
   );
 };
 
+const SessionPaymentModal = ({
+  doc,
+  selectedPaymentMethod,
+  onSelectMethod,
+  cardholderName,
+  onCardholderNameChange,
+  cardNumber,
+  onCardNumberChange,
+  expiry,
+  onExpiryChange,
+  cvc,
+  onCvcChange,
+  paymentError,
+  isPaying,
+  onClose,
+  onConfirm,
+}) => {
+  if (!doc) return null;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.35)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1100,
+        padding: "20px",
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: "520px",
+          background: "#fff",
+          borderRadius: "12px",
+          padding: "20px",
+          boxShadow: "0 12px 30px rgba(0,0,0,0.18)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 style={{ margin: "0 0 8px", fontSize: "20px", color: "#0f172a" }}>Complete Session Payment</h3>
+        <p style={{ margin: "0 0 12px", color: "#475569", fontSize: "14px" }}>
+          Choose payment method to complete payment for <strong>{doc.name}</strong>.
+        </p>
+
+        <div
+          style={{
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            borderRadius: "10px",
+            padding: "12px",
+            marginBottom: "12px",
+          }}
+        >
+          <div style={{ fontSize: "12px", color: "#64748b" }}>Amount Due</div>
+          <div style={{ marginTop: "4px", fontSize: "28px", fontWeight: 800, color: "#0f172a" }}>
+            ${Number(doc.sessionAmount || 0).toFixed(2)}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+          <button
+            type="button"
+            onClick={() => onSelectMethod("stripe")}
+            style={{
+              flex: 1,
+              padding: "10px 12px",
+              borderRadius: "8px",
+              border: selectedPaymentMethod === "stripe" ? "2px solid #2563eb" : "1px solid #cbd5e1",
+              background: selectedPaymentMethod === "stripe" ? "#eff6ff" : "#fff",
+              color: "#1e293b",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            Pay with Stripe
+          </button>
+          <button
+            type="button"
+            onClick={() => onSelectMethod("card")}
+            style={{
+              flex: 1,
+              padding: "10px 12px",
+              borderRadius: "8px",
+              border: selectedPaymentMethod === "card" ? "2px solid #2563eb" : "1px solid #cbd5e1",
+              background: selectedPaymentMethod === "card" ? "#eff6ff" : "#fff",
+              color: "#1e293b",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            Pay with Credit/Debit Card
+          </button>
+        </div>
+
+        <div style={{ display: "grid", gap: "8px", marginBottom: "10px" }}>
+          <input
+            type="text"
+            value={cardholderName}
+            onChange={(e) => onCardholderNameChange(e.target.value)}
+            placeholder="Cardholder name"
+            style={{ width: "100%", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "10px 12px", fontSize: "14px" }}
+          />
+          <input
+            type="text"
+            value={cardNumber}
+            onChange={(e) => onCardNumberChange(e.target.value.replace(/[^\d\s]/g, "").slice(0, 19))}
+            placeholder="Card number (16 digits)"
+            style={{ width: "100%", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "10px 12px", fontSize: "14px" }}
+          />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+            <input
+              type="text"
+              value={expiry}
+              onChange={(e) => onExpiryChange(e.target.value.replace(/[^\d/]/g, "").slice(0, 5))}
+              placeholder="MM/YY"
+              style={{ width: "100%", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "10px 12px", fontSize: "14px" }}
+            />
+            <input
+              type="password"
+              value={cvc}
+              onChange={(e) => onCvcChange(e.target.value.replace(/[^\d]/g, "").slice(0, 4))}
+              placeholder="CVC"
+              style={{ width: "100%", border: "1px solid #cbd5e1", borderRadius: "8px", padding: "10px 12px", fontSize: "14px" }}
+            />
+          </div>
+        </div>
+
+        {paymentError ? <p style={{ margin: "0 0 10px", color: "#b91c1c", fontSize: "13px", fontWeight: 600 }}>{paymentError}</p> : null}
+
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isPaying}
+            style={{
+              flex: 1,
+              padding: "11px 12px",
+              borderRadius: "8px",
+              border: "1px solid #cbd5e1",
+              background: "#fff",
+              color: "#334155",
+              fontWeight: 700,
+              cursor: isPaying ? "not-allowed" : "pointer",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isPaying}
+            style={{
+              flex: 1.5,
+              padding: "11px 12px",
+              borderRadius: "8px",
+              border: "none",
+              background: isPaying ? "#94a3b8" : "#16a34a",
+              color: "#fff",
+              fontWeight: 700,
+              cursor: isPaying ? "not-allowed" : "pointer",
+            }}
+          >
+            {isPaying
+              ? "Processing Payment..."
+              : `Pay with ${selectedPaymentMethod === "stripe" ? "Stripe" : "Credit/Debit Card"} - $${Number(doc.sessionAmount || 0).toFixed(2)}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const OwnerDashboardPage = () => {
   const restoredDashboardState = loadDashboardState();
   const [docs, setDocs] = useState([]);
@@ -331,6 +508,15 @@ const OwnerDashboardPage = () => {
   const [uploadedAssets, setUploadedAssets] = useState([]);
   const [uploadedAsset, setUploadedAsset] = useState(null);
   const [adminTerminationNotice, setAdminTerminationNotice] = useState(null);
+  const [paymentModalDoc, setPaymentModalDoc] = useState(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("stripe");
+  const [paymentCardholderName, setPaymentCardholderName] = useState("");
+  const [paymentCardNumber, setPaymentCardNumber] = useState("");
+  const [paymentExpiry, setPaymentExpiry] = useState("");
+  const [paymentCvc, setPaymentCvc] = useState("");
+  const [paymentError, setPaymentError] = useState("");
+  const [isPaying, setIsPaying] = useState(false);
+  const [paymentSuccessMessage, setPaymentSuccessMessage] = useState("");
 
   const lastAutoSharedDocKeyRef = useRef("");
   const currentSessionIdRef = useRef(null);
@@ -1201,10 +1387,38 @@ const OwnerDashboardPage = () => {
   };
 
   const handlePaySessionAmount = async (doc) => {
+    setPaymentModalDoc(doc);
+    setPaymentError("");
+  };
+
+  const handleConfirmSessionPayment = async () => {
+    if (!paymentModalDoc) return;
+
+    const normalizedCardNumber = paymentCardNumber.replace(/\s+/g, "").trim();
+    if (!paymentCardholderName.trim()) {
+      setPaymentError("Cardholder name is required.");
+      return;
+    }
+    if (!/^\d{16}$/.test(normalizedCardNumber)) {
+      setPaymentError("Card number must be 16 digits.");
+      return;
+    }
+    if (!/^(0[1-9]|1[0-2])\/[0-9]{2}$/.test(paymentExpiry.trim())) {
+      setPaymentError("Expiry must be in MM/YY format.");
+      return;
+    }
+    if (!/^\d{3,4}$/.test(paymentCvc.trim())) {
+      setPaymentError("CVC must be 3 or 4 digits.");
+      return;
+    }
+
+    setPaymentError("");
+    setIsPaying(true);
+
     try {
-      await payOwnerDocumentSession(doc.id, {
-        transactionId: `local-${Date.now()}`,
-        paymentMethod: 'local_mock',
+      await payOwnerDocumentSession(paymentModalDoc.id, {
+        transactionId: `${selectedPaymentMethod}-${Date.now()}`,
+        paymentMethod: selectedPaymentMethod === 'stripe' ? 'stripe' : 'credit_card',
       });
 
       const latestDocs = await fetchOwnerDocuments({ ownerId: authUser.userId });
@@ -1213,10 +1427,18 @@ const OwnerDashboardPage = () => {
         saveDocs(latestDocs);
       }
 
-      alert(`Payment completed for ${doc.name}. Notary can now end the session.`);
+      setPaymentSuccessMessage(`Payment completed for ${paymentModalDoc.name}. Notary can now end the session.`);
+      setPaymentModalDoc(null);
+      setPaymentCardholderName("");
+      setPaymentCardNumber("");
+      setPaymentExpiry("");
+      setPaymentCvc("");
+      window.setTimeout(() => setPaymentSuccessMessage(""), 3600);
     } catch (error) {
       console.error('Failed to process payment:', error);
-      alert(error?.message || 'Failed to process payment');
+      setPaymentError(error?.message || 'Failed to process payment');
+    } finally {
+      setIsPaying(false);
     }
   };
 
@@ -1832,6 +2054,34 @@ const OwnerDashboardPage = () => {
             </div>
           )}
 
+          {paymentSuccessMessage ? (
+            <div style={{ maxWidth: "900px", margin: "12px auto 0", padding: "0 24px" }}>
+              <div
+                style={{
+                  background: "#ecfdf3",
+                  border: "1px solid #86efac",
+                  color: "#166534",
+                  borderRadius: "10px",
+                  padding: "10px 12px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "10px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                }}
+              >
+                <span>{paymentSuccessMessage}</span>
+                <button
+                  onClick={() => setPaymentSuccessMessage("")}
+                  style={{ border: "none", background: "transparent", color: "#166534", cursor: "pointer", fontWeight: 700 }}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {/* Content */}
           <div style={{ maxWidth: "1340px", width: "100%", margin: "0 auto", padding: "32px 24px" }}>
             {docs.length === 0 ? (
@@ -2105,6 +2355,28 @@ const OwnerDashboardPage = () => {
           onConfirm={handleConfirmNotarize}
         />
       )}
+
+      <SessionPaymentModal
+        doc={paymentModalDoc}
+        selectedPaymentMethod={selectedPaymentMethod}
+        onSelectMethod={setSelectedPaymentMethod}
+        cardholderName={paymentCardholderName}
+        onCardholderNameChange={setPaymentCardholderName}
+        cardNumber={paymentCardNumber}
+        onCardNumberChange={setPaymentCardNumber}
+        expiry={paymentExpiry}
+        onExpiryChange={setPaymentExpiry}
+        cvc={paymentCvc}
+        onCvcChange={setPaymentCvc}
+        paymentError={paymentError}
+        isPaying={isPaying}
+        onClose={() => {
+          if (isPaying) return;
+          setPaymentModalDoc(null);
+          setPaymentError("");
+        }}
+        onConfirm={handleConfirmSessionPayment}
+      />
     </div>
   );
 };
