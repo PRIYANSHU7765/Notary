@@ -3835,6 +3835,52 @@ app.get('/api/owner-documents/:id', requireAuth, (req, res) => {
   }
 });
 
+app.get('/api/owner-documents/:id/download', requireAuth, (req, res) => {
+  try {
+    const { id } = req.params;
+    const document = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+    if (!document) {
+      return res.status(404).json({ error: 'Owner document not found' });
+    }
+    const requestRole = normalizeRole(req.auth?.role);
+    if (requestRole === 'owner' && String(document.ownerId || '') !== String(req.auth.userId)) {
+      return res.status(403).json({ error: 'Forbidden: you can only access your own documents' });
+    }
+    if (requestRole === 'notary') {
+      const docNotaryId = String(document.notaryId || '').trim();
+      const isUnclaimedPending = String(document.status || '').trim().toLowerCase() === 'pending_review' && !docNotaryId;
+      const isAssignedToRequester = docNotaryId && docNotaryId === String(req.auth.userId || '').trim();
+      if (!isUnclaimedPending && !isAssignedToRequester) {
+        return res.status(403).json({ error: 'Forbidden: document is not available to this notary' });
+      }
+    }
+
+    if (document.dataUrl && String(document.dataUrl).startsWith('data:')) {
+      const match = document.dataUrl.match(/^data:(.+?);base64,(.+)$/);
+      if (!match) {
+        return res.status(400).json({ error: 'Document data format invalid' });
+      }
+      const [, mimeType] = match;
+      const base64Data = match[2];
+      const buffer = Buffer.from(base64Data, 'base64');
+      const fileName = `${document.name?.replace(/\.pdf$/i, '') || id}.pdf`;
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      return res.send(buffer);
+    }
+
+    if (document.notarizedPath && fs.existsSync(document.notarizedPath)) {
+      const fileName = `${document.name?.replace(/\.pdf$/i, '') || id}.pdf`;
+      return res.download(document.notarizedPath, fileName);
+    }
+
+    return res.status(404).json({ error: 'Original document not available for download' });
+  } catch (error) {
+    console.error('Error downloading owner document:', error);
+    res.status(500).json({ error: 'Failed to download owner document' });
+  }
+});
+
 app.get('/api/owner-documents/:id/notarized', requireAuth, (req, res) => {
   try {
     const { id } = req.params;

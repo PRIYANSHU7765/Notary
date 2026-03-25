@@ -536,6 +536,50 @@ async function fetchNotarizedDocuments({ sessionId, ownerId } = {}) {
   }
 }
 
+async function downloadOwnerDocument(documentId) {
+  if (!documentId) {
+    throw new Error('documentId is required for downloadOwnerDocument');
+  }
+
+  const response = await fetchWithFallback(`/api/owner-documents/${documentId}/download`, {
+    method: 'GET',
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${response.status}: Failed to download owner document`);
+  }
+
+  const contentDisposition = response.headers.get('Content-Disposition') || '';
+  const filenameMatch = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/.exec(contentDisposition);
+  const filename = filenameMatch ? filenameMatch[1] : `document-${documentId}.pdf`;
+  const blob = await response.blob();
+
+  return { blob, filename };
+}
+
+async function downloadNotarizedOwnerDocument(documentId) {
+  if (!documentId) {
+    throw new Error('documentId is required for downloadNotarizedOwnerDocument');
+  }
+
+  const response = await fetchWithFallback(`/api/owner-documents/${documentId}/notarized`, {
+    method: 'GET',
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${response.status}: Failed to download notarized document`);
+  }
+
+  const contentDisposition = response.headers.get('Content-Disposition') || '';
+  const filenameMatch = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/.exec(contentDisposition);
+  const filename = filenameMatch ? filenameMatch[1] : `document-${documentId}-notarized.pdf`;
+  const blob = await response.blob();
+
+  return { blob, filename };
+}
+
 async function updateDocumentReview(documentId, notaryReview, notaryName) {
   try {
     const url = `/api/documents/${documentId}/review`;
@@ -998,6 +1042,8 @@ export {
   fetchDocuments,
   fetchOwnerDocuments,
   fetchNotarizedDocuments,
+  downloadOwnerDocument,
+  downloadNotarizedOwnerDocument,
   updateDocumentReview,
   updateOwnerDocumentReview,
   deleteOwnerDocument,

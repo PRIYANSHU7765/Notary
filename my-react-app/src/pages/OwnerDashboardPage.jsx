@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { saveOwnerDocument, fetchOwnerDocuments, deleteOwnerDocument, payOwnerDocumentSession, notarizeOwnerDocument, saveSignature } from "../utils/apiClient";
+import { saveOwnerDocument, fetchOwnerDocuments, deleteOwnerDocument, payOwnerDocumentSession, notarizeOwnerDocument, saveSignature, downloadOwnerDocument, downloadNotarizedOwnerDocument } from "../utils/apiClient";
 import { base64ToUint8Array } from "../utils/pdfUtils";
 import socket from "../socket/socket";
 import PdfViewer from "../components/PdfViewer";
@@ -1378,19 +1378,26 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
     navigator.clipboard.writeText(sessionId);
   };
 
-  const handleDownloadNotarized = (doc) => {
+  const handleDownloadNotarized = async (doc) => {
     if (!doc?.id) {
       alert('Unable to download notarized document.');
       return;
     }
 
-    const downloadUrl = `/api/owner-documents/${doc.id}/notarized`;
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.download = `${doc.name?.replace(/\.pdf$/i, '') || 'document'}-notarized.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    try {
+      const { blob, filename } = await downloadNotarizedOwnerDocument(doc.id);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('[OwnerDashboard] downloadNotarized failed:', error);
+      alert(`Failed to download notarized document: ${error.message || 'Unknown error'}`);
+    }
   };
 
   const handleCancelNotarize = async (doc) => {

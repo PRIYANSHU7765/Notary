@@ -57,10 +57,8 @@ const NotarySidebar = ({ role = 'notary', menuItems }) => {
 
       {authUser && (
         <div className="sidebar-profile">
-          <div className="profile-avatar">{authUser.username?.charAt(0).toUpperCase()}</div>
-          <div className="profile-info">
-            <p className="profile-name">{authUser.username}</p>
-            <p className="profile-role">{resolvedRole === 'owner' ? 'Owner' : 'Notary'}</p>
+          <div className="profile-info" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <p className="profile-name" style={{ fontWeight: 700 }}>{authUser.username}</p>
           </div>
         </div>
       )}
