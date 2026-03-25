@@ -297,16 +297,20 @@ function App() {
             }
           />
           <Route
-            path="/notary/on-demand"
+            path="/notary/witness"
             element={
               <RequireAuth>
-                <RequireRole allowedRoles={['notary']}>
+                <RequireRole allowedRoles={["notary"]}>
                   <RequireKbaApproval>
                     <NotaryOnDemandPage />
                   </RequireKbaApproval>
                 </RequireRole>
               </RequireAuth>
             }
+          />
+          <Route
+            path="/notary/on-demand"
+            element={<Navigate to="/notary/witness" replace />}
           />
           <Route
             path="/notary/meetings"

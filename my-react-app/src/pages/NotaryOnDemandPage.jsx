@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import NotaryWorkspaceShell from '../components/NotaryWorkspaceShell';
 import './NotaryWorkspacePages.css';
 
-const STORAGE_KEY = 'notary.onDemand.preferences';
+const STORAGE_KEY = 'notary.witness.preferences';
 
 const defaultPreferences = {
   location: '',
@@ -33,7 +33,7 @@ const NotaryOnDemandPage = () => {
         className="notary-btn"
         onClick={() => {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
-          setNotice('On demand preferences saved successfully.');
+          setNotice('Witness preferences saved successfully.');
           window.setTimeout(() => setNotice(''), 2400);
         }}
       >
@@ -66,7 +66,7 @@ const NotaryOnDemandPage = () => {
 
   return (
     <NotaryWorkspaceShell
-      title="On demand"
+      title="Witness"
       subtitle="Manage location, device preferences, witness sessions, and availability settings"
       actions={actions}
     >

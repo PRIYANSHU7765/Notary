@@ -17,7 +17,7 @@ const NotarySidebar = () => {
   const menuItems = [
     { id: 'home', label: 'Home', path: '/notary/dashboard' },
     { id: 'transactions', label: 'Transactions', path: '/notary/transactions' },
-    { id: 'on-demand', label: 'On demand', path: '/notary/on-demand' },
+    { id: 'witness', label: 'Witness', path: '/notary/witness' },
     { id: 'meetings', label: 'Meetings', path: '/notary/meetings' },
     { id: 'settings', label: 'Settings', path: '/notary/settings' },
   ];
