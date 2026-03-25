@@ -91,7 +91,7 @@
 
 .notary-table {
   width: 100%;
-  min-width: 1000px;
+  min-width: 1100px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -109,6 +109,49 @@
 .notary-table th {
   background: #f9fbff;
   color: #1f3e6c;
+}
+
+.notary-table th:nth-child(1),
+.notary-table td:nth-child(1) {
+  min-width: 260px;
+  max-width: 320px;
+}
+
+.notary-table th:nth-child(2),
+.notary-table td:nth-child(2) {
+  min-width: 120px;
+  max-width: 140px;
+}
+
+.notary-table th:nth-child(3),
+.notary-table td:nth-child(3) {
+  min-width: 220px;
+  max-width: 260px;
+}
+
+.notary-table th:nth-child(4),
+.notary-table td:nth-child(4),
+.notary-table th:nth-child(5),
+.notary-table td:nth-child(5),
+.notary-table th:nth-child(6),
+.notary-table td:nth-child(6) {
+  min-width: 120px;
+  max-width: 160px;
+}
+
+.notary-table th:nth-child(7),
+.notary-table td:nth-child(7) {
+  min-width: 110px;
+  max-width: 130px;
+}
+
+.notary-table th:nth-child(8),
+.notary-table td:nth-child(8) {
+  min-width: 240px;
+  max-width: 280px;
+  text-align: left;
+  white-space: normal;
+  overflow: visible;
 }
 
 
@@ -150,10 +193,29 @@
 }
 
 .notary-table td .notary-btn {
-  padding: 8px 12px;
-  font-size: 13px;
-  min-width: 95px;
+  padding: 6px 10px;
+  font-size: 12px;
+  height: 32px;
 }
+
+.inline-actions-table {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.inline-actions-table .table-btn {
+  padding: 6px 10px;
+  font-size: 12px;
+  height: 32px;
+  min-width: 70px;
+}
+
+.inline-actions-table .table-btn.secondary {
+  min-width: 65px;
+}
+
 
 .notary-table th:nth-child(1),
 .notary-table td:nth-child(1) {

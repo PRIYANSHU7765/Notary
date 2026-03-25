@@ -1,5 +1,14 @@
 import io from "socket.io-client";
 
+const getStoredAuthToken = () => {
+  try {
+    const authUser = JSON.parse(window.localStorage.getItem('notary.authUser') || 'null');
+    return authUser?.token || '';
+  } catch {
+    return '';
+  }
+};
+
 // Detect socket server URL based on current host and env variables
 const getSocketUrl = () => {
   const env =
@@ -12,12 +21,13 @@ const getSocketUrl = () => {
     window.location.hostname === 'localhost' ||
     window.location.hostname === '127.0.0.1';
 
+  const localSocketCandidates = ['http://localhost:5001', 'http://localhost:5000', 'http://localhost:5002'];
+
   const fallbackUrls = [
+    ...(isLocalhost ? localSocketCandidates : []),
     env,
     window.location.origin,
-    'http://localhost:5001',
-    'http://localhost:5000',
-    'http://localhost:5002',
+    ...(!isLocalhost ? localSocketCandidates : []),
   ].filter((url) => !!url);
 
   if (fallbackUrls.length === 0) {
@@ -26,7 +36,9 @@ const getSocketUrl = () => {
   }
 
   if (isLocalhost) {
-    return env || 'http://localhost:5001';
+    const normalizedEnv = String(env || '').trim().toLowerCase();
+    const envIsLocal = localSocketCandidates.some((candidate) => candidate.toLowerCase() === normalizedEnv);
+    return envIsLocal ? env : localSocketCandidates[0];
   }
 
   return env || window.location.origin;
@@ -39,6 +51,7 @@ let socket = null;
 
 try {
   socket = io(SOCKET_SERVER_URL, {
+    auth: (cb) => cb({ token: getStoredAuthToken() }),
     reconnection: true,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,

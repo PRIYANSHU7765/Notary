@@ -329,10 +329,11 @@ function normalizeParams(params = {}) {
   if (!params || typeof params !== 'object') return params;
   const normalized = {};
   for (const [key, value] of Object.entries(params)) {
+    const safeValue = value === undefined ? null : value;
     if (key.startsWith(':') || key.startsWith('@') || key.startsWith('$')) {
-      normalized[key] = value;
+      normalized[key] = safeValue;
     } else {
-      normalized[`:${key}`] = value;
+      normalized[`:${key}`] = safeValue;
     }
   }
   return normalized;
@@ -1000,8 +1001,8 @@ function upsertSessionParticipant({ sessionId, socketId, userId, username, role 
     notaryIds = Array.from(new Set([...notaryIds, userId]));
   }
 
-  const ownerId = role === 'owner' ? userId : existing?.ownerId;
-  const ownerUsername = role === 'owner' ? username : existing?.ownerUsername;
+  const ownerId = role === 'owner' ? (userId || null) : (existing?.ownerId || null);
+  const ownerUsername = role === 'owner' ? (username || null) : (existing?.ownerUsername || null);
 
   const data = {
     sessionId,
@@ -3526,6 +3527,115 @@ app.put('/api/owner-documents/:id/notarize', requireAuth, requireRole(['notary']
   }
 });
 
+// OWNER notarize endpoint - Owner marks their document as notarized (ready for notary review)
+app.post('/api/owner-documents/:id/owner-notarize', requireAuth, requireRole(['owner']), requireKbaApproved, (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    // Verify owner owns this document
+    if (String(existing.ownerId) !== String(req.auth.userId)) {
+      return res.status(403).json({ error: 'You can only notarize your own documents' });
+    }
+
+    const currentStatus = String(existing.status || '').trim().toLowerCase();
+    if (currentStatus === 'session_started' || currentStatus === 'payment_pending' || currentStatus === 'notarized') {
+      return res.status(409).json({ error: 'This document cannot be submitted for notarization in its current state' });
+    }
+
+    if (currentStatus === 'accepted') {
+      return res.status(409).json({ error: 'This document is already accepted by a notary' });
+    }
+
+    // Owner requests notarization review. This is not the final notarized state.
+    dbRun(
+      `UPDATE owner_documents
+       SET status = :status,
+           inProcess = :inProcess,
+           notarized = :notarized,
+           notarizedAt = :notarizedAt,
+           notaryReview = :notaryReview,
+           notaryReviewedAt = :notaryReviewedAt,
+           notaryId = :notaryId,
+           notaryName = :notaryName,
+           scheduledAt = :scheduledAt,
+           startedAt = :startedAt,
+           endedAt = :endedAt,
+           sessionAmount = :sessionAmount,
+           paymentStatus = :paymentStatus,
+           paymentRequestedAt = :paymentRequestedAt,
+           paymentRequestedBy = :paymentRequestedBy,
+           paymentPaidAt = :paymentPaidAt,
+           paymentTransactionId = :paymentTransactionId,
+           paymentMethod = :paymentMethod
+       WHERE id = :id`,
+      {
+        id,
+        status: 'pending_review',
+        inProcess: 1,
+        notarized: 0,
+        notarizedAt: null,
+        notaryReview: 'pending',
+        notaryReviewedAt: null,
+        notaryId: null,
+        notaryName: null,
+        scheduledAt: null,
+        startedAt: null,
+        endedAt: null,
+        sessionAmount: 0,
+        paymentStatus: 'not_required',
+        paymentRequestedAt: null,
+        paymentRequestedBy: null,
+        paymentPaidAt: null,
+        paymentTransactionId: null,
+        paymentMethod: null,
+      }
+    );
+    persistDatabase();
+
+    const document = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+    if (!document) {
+      return res.status(404).json({ error: 'Document not found after update' });
+    }
+
+    io.emit('documentReviewUpdated', {
+      id: document.id,
+      documentId: document.id,
+      sessionId: document.sessionId,
+      ownerId: document.ownerId,
+      notaryReview: document.notaryReview,
+      notaryName: document.notaryName,
+      notaryReviewedAt: document.notaryReviewedAt,
+      status: document.status,
+    });
+
+    // Keep compatibility for existing listeners that consume this event.
+    io.emit('documentNotarized', {
+      id: document.id,
+      documentId: document.id,
+      sessionId: document.sessionId,
+      ownerId: document.ownerId,
+      ownerName: document.ownerName,
+      name: document.name,
+      size: document.size,
+      type: document.type,
+      uploadedAt: document.uploadedAt,
+      notarized: Boolean(document.notarized),
+      status: document.status,
+      notaryReview: document.notaryReview,
+    });
+
+    res.json(document);
+  } catch (error) {
+    console.error('Error notarizing owner document:', error);
+    res.status(500).json({ error: 'Failed to notarize document' });
+  }
+});
+
 // Owner document endpoints (stored separately from session documents)
 app.post('/api/owner-documents', requireAuth, requireRole(['owner']), requireKbaApproved, (req, res) => {
   try {
@@ -3672,8 +3782,13 @@ app.get('/api/owner-documents', requireAuth, (req, res) => {
          AND (:status IS NULL OR status = :status)
          AND (
            :currentRole != 'notary'
-           OR notaryId IS NULL
-           OR notaryId = :viewerNotaryId
+            OR (
+              (
+                status = 'pending_review'
+                AND (notaryId IS NULL OR TRIM(notaryId) = '')
+              )
+              OR notaryId = :viewerNotaryId
+            )
          )
        ORDER BY uploadedAt DESC`,
       {
@@ -3701,8 +3816,17 @@ app.get('/api/owner-documents/:id', requireAuth, (req, res) => {
     if (!document) {
       return res.status(404).json({ error: 'Owner document not found' });
     }
-    if (normalizeRole(req.auth?.role) === 'owner' && String(document.ownerId || '') !== String(req.auth.userId)) {
+    const requestRole = normalizeRole(req.auth?.role);
+    if (requestRole === 'owner' && String(document.ownerId || '') !== String(req.auth.userId)) {
       return res.status(403).json({ error: 'Forbidden: you can only access your own documents' });
+    }
+    if (requestRole === 'notary') {
+      const docNotaryId = String(document.notaryId || '').trim();
+      const isUnclaimedPending = String(document.status || '').trim().toLowerCase() === 'pending_review' && !docNotaryId;
+      const isAssignedToRequester = docNotaryId && docNotaryId === String(req.auth.userId || '').trim();
+      if (!isUnclaimedPending && !isAssignedToRequester) {
+        return res.status(403).json({ error: 'Forbidden: document is not available to this notary' });
+      }
     }
     res.json(document);
   } catch (error) {
@@ -3789,8 +3913,15 @@ app.put('/api/owner-documents/:id/session-started', requireAuth, requireRole(['n
     if (!existing) {
       return res.status(404).json({ error: 'Owner document not found' });
     }
-    if (existing.notaryId && String(existing.notaryId) !== String(req.auth?.userId || '')) {
+    const existingStatus = String(existing.status || '').trim().toLowerCase();
+    if (!existing.notaryId) {
+      return res.status(409).json({ error: 'This document must be accepted by a notary before starting a session' });
+    }
+    if (String(existing.notaryId) !== String(req.auth?.userId || '')) {
       return res.status(409).json({ error: 'This document is locked by another notary' });
+    }
+    if (!['accepted', 'session_started'].includes(existingStatus)) {
+      return res.status(409).json({ error: 'Session can only be started after notary acceptance' });
     }
 
     const startAtMs = now();
@@ -3976,6 +4107,10 @@ app.put('/api/owner-documents/:id/review', requireAuth, requireRole(['notary']),
     const existingStatus = String(existing.status || '').trim().toLowerCase();
     const existingReview = String(existing.notaryReview || '').trim().toLowerCase();
 
+    if (existingStatus === 'uploaded') {
+      return res.status(409).json({ error: 'Owner must submit this document for notarization first' });
+    }
+
     if (existingNotaryId && existingNotaryId !== requesterNotaryId) {
       return res.status(409).json({ error: 'This document is locked by another notary' });
     }
@@ -3987,13 +4122,13 @@ app.put('/api/owner-documents/:id/review', requireAuth, requireRole(['notary']),
       existingStatus === 'payment_pending' ||
       existingStatus === 'notarized';
 
-    if (wasAcceptedAlready && notaryReview === 'rejected') {
-      return res.status(409).json({ error: 'Rejected is not allowed after document acceptance' });
+    if (wasAcceptedAlready && notaryReview !== 'accepted') {
+      return res.status(409).json({ error: 'This document is already accepted and can no longer be changed' });
     }
 
     const nowMs = now();
     const reviewerName = notaryName || req.auth?.username || 'Unknown Notary';
-    const nextNotaryId = notaryReview === 'pending' ? null : (existingNotaryId || requesterNotaryId || null);
+    const nextNotaryId = notaryReview === 'pending' ? null : (requesterNotaryId || existingNotaryId || null);
     const status =
       notaryReview === 'accepted'
         ? 'accepted'
@@ -4320,8 +4455,21 @@ io.on('connection', (socket) => {
 
   // User joins a notarization session
   socket.on('joinSession', (data) => {
-    const tokenPayload = verifyAccessToken(data?.token || data?.authToken || '');
+    const handshakeToken = socket.handshake?.auth?.token || '';
+    const rawAuthHeader = socket.handshake?.headers?.authorization || '';
+    const headerToken = typeof rawAuthHeader === 'string' && rawAuthHeader.toLowerCase().startsWith('bearer ')
+      ? rawAuthHeader.slice(7).trim()
+      : '';
+
+    const resolvedToken = data?.token || data?.authToken || handshakeToken || headerToken || '';
+    const tokenPayload = verifyAccessToken(resolvedToken);
     if (!tokenPayload) {
+      console.warn(`⚠️ Rejected joinSession for socket ${socket.id}: invalid or missing token`, {
+        roomId: data?.roomId,
+        role: data?.role,
+        hasEventToken: Boolean(data?.token || data?.authToken),
+        hasHandshakeToken: Boolean(handshakeToken),
+      });
       socket.emit('authError', { message: 'Unauthorized socket session. Please login again.' });
       return;
     }

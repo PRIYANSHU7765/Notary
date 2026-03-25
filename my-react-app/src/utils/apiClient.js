@@ -5,11 +5,12 @@ const configuredApiBaseUrl =
   import.meta.env.VITE_API_BASE_URL;
 
 const isDev = Boolean(import.meta.env.DEV);
+const DEV_LOCAL_API_BASES = ['http://localhost:5000', 'http://localhost:5001', 'http://localhost:5002'];
 const API_BASE_STORAGE_KEY = 'notary.apiBaseUrl';
 const API_BASE_CANDIDATES = [
+  ...(isDev ? DEV_LOCAL_API_BASES : []),
   configuredApiBaseUrl,
   (typeof window !== 'undefined' ? window.location.origin : ''),
-  ...(isDev ? ['http://localhost:5001', 'http://localhost:5002', 'http://localhost:5000'] : []),
 ].filter((v) => typeof v === 'string' && v.trim() !== '');
 
 // Deduplicate while preserving order
@@ -23,13 +24,33 @@ const storedApiBaseUrl =
   (typeof window !== 'undefined' && window.localStorage.getItem(API_BASE_STORAGE_KEY)) ||
   null;
 
+const normalizedStoredApiBaseUrl = (() => {
+  if (!storedApiBaseUrl) return null;
+  if (!isDev) return storedApiBaseUrl;
+
+  const normalized = String(storedApiBaseUrl).trim().toLowerCase();
+  const isLocalDevApi = DEV_LOCAL_API_BASES.some((base) => base.toLowerCase() === normalized);
+  return isLocalDevApi ? storedApiBaseUrl : null;
+})();
+
+const preferredConfiguredApiBaseUrl = (() => {
+  if (!configuredApiBaseUrl) return null;
+  if (!isDev) return configuredApiBaseUrl;
+
+  const normalized = String(configuredApiBaseUrl).trim().toLowerCase();
+  const isLocalDevApi = DEV_LOCAL_API_BASES.some((base) => base.toLowerCase() === normalized);
+  return isLocalDevApi ? configuredApiBaseUrl : null;
+})();
+
 if (typeof window !== 'undefined' && configuredApiBaseUrl && storedApiBaseUrl && storedApiBaseUrl !== configuredApiBaseUrl) {
-  window.localStorage.setItem(API_BASE_STORAGE_KEY, configuredApiBaseUrl);
+  if (!isDev || preferredConfiguredApiBaseUrl) {
+    window.localStorage.setItem(API_BASE_STORAGE_KEY, configuredApiBaseUrl);
+  }
 }
 
 let lastWorkingApiBaseUrl =
-  configuredApiBaseUrl ||
-  storedApiBaseUrl ||
+  preferredConfiguredApiBaseUrl ||
+  normalizedStoredApiBaseUrl ||
   API_CANDIDATES[0];
 
 const getBaseUrlPriority = () => {
@@ -675,6 +696,33 @@ async function payOwnerDocumentSession(documentId, paymentPayload = {}) {
   }
 }
 
+async function notarizeOwnerDocument(documentId) {
+  try {
+    const url = `/api/owner-documents/${documentId}/owner-notarize`;
+    console.log('[notarizeOwnerDocument] Notarizing:', documentId);
+
+    const response = await fetchWithFallback(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    console.log('[notarizeOwnerDocument] ✅ Notarized:', documentId);
+    return responseData;
+  } catch (error) {
+    console.error('[notarizeOwnerDocument] ❌ Error:', error);
+    throw error;
+  }
+}
+
 async function endOwnerDocumentSession(documentId, sessionId, notaryName, notaryUserId) {
   try {
     const url = `/api/owner-documents/${documentId}/session-ended`;
@@ -953,6 +1001,7 @@ export {
   updateDocumentReview,
   updateOwnerDocumentReview,
   deleteOwnerDocument,
+  notarizeOwnerDocument,
   markOwnerDocumentSessionStarted,
   completeOwnerDocumentNotarization,
   payOwnerDocumentSession,

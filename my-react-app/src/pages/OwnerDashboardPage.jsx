@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { saveOwnerDocument, fetchOwnerDocuments, deleteOwnerDocument, payOwnerDocumentSession, saveSignature } from "../utils/apiClient";
+import { saveOwnerDocument, fetchOwnerDocuments, deleteOwnerDocument, payOwnerDocumentSession, notarizeOwnerDocument, saveSignature } from "../utils/apiClient";
 import { base64ToUint8Array } from "../utils/pdfUtils";
 import socket from "../socket/socket";
 import PdfViewer from "../components/PdfViewer";
@@ -251,10 +251,10 @@ const NotarizeConfirmModal = ({ doc, onClose, onConfirm }) => {
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: "48px", marginBottom: "16px" }}>📋</div>
           <h3 style={{ margin: "0 0 8px 0", fontSize: "18px", fontWeight: 700, color: "#1a1a2e" }}>
-            Notarize Document?
+            Send For Notary Review?
           </h3>
           <p style={{ margin: "0 0 24px 0", color: "#777", fontSize: "14px", lineHeight: "1.5" }}>
-            Do you want to notarize <strong>{doc.name}</strong>?
+            Do you want to send <strong>{doc.name}</strong> to available notaries for acceptance?
           </p>
         </div>
         <div style={{ display: "flex", justifyContent: "center", gap: "12px", marginTop: "28px" }}>
@@ -1031,8 +1031,20 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
   useEffect(() => {
     if (!activeSessionDocId) return;
 
-    const sessionIdToJoin = activeSessions[activeSessionDocId] || previousSessions[activeSessionDocId];
+    const activeDoc = docs.find((doc) => doc.id === activeSessionDocId);
+    const sessionIdFromUrl = new URLSearchParams(window.location.search).get("sessionId");
+    const sessionIdToJoin =
+      activeSessions[activeSessionDocId] ||
+      previousSessions[activeSessionDocId] ||
+      activeDoc?.sessionId ||
+      sessionIdFromUrl ||
+      localStorage.getItem("notary.ownerSessionId");
     if (!sessionIdToJoin) return;
+
+    setActiveSessions((prev) => {
+      if (prev[activeSessionDocId] === sessionIdToJoin) return prev;
+      return { ...prev, [activeSessionDocId]: sessionIdToJoin };
+    });
 
     // Store the current session ID for later use in handleExitSession
     currentSessionIdRef.current = sessionIdToJoin;
@@ -1132,7 +1144,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
       socket.off("elementRemoved", onElementRemoved);
       socket.off("documentScrolled", onDocumentScrolled);
     };
-  }, [activeSessionDocId, activeSessions, previousSessions]);
+  }, [activeSessionDocId, activeSessions, previousSessions, docs]);
 
   // Emit owner scroll updates so notary view stays synchronized bidirectionally.
   useEffect(() => {
@@ -1622,74 +1634,36 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
   };
 
   const handleConfirmNotarize = async () => {
-    const ownerName = (() => {
-      try {
-        return (
-          notarizingDoc?.ownerName ||
-          JSON.parse(localStorage.getItem("notary.authUser") || "null")?.username ||
-          "Owner"
-        );
-      } catch {
-        return notarizingDoc?.ownerName || "Owner";
-      }
-    })();
-
-    const docSessionId = `notary-session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const updatedDoc = {
-      ...notarizingDoc,
-      ownerName,
-      sessionId: docSessionId,
-      status: "pending_review",
-      notaryReview: "pending",
-      notarized: false,
-      notarizedAt: null,
-      notaryName: "",
-      notaryReviewedAt: null,
-    };
-    const updated = docs.map((d) =>
-      d.id === notarizingDoc.id ? updatedDoc : d
-    );
-    setDocs(updated);
-    saveDocs(updated);
-
-    // Save to backend
     try {
-      // IMPORTANT: Don't set activeSessions here! Only set it when notary actually starts the session.
-      // setPreviousSessions can stay for continuing past sessions, but NOT for new ones
-      console.log('📤 [OWNER] Saving document for notary review with sessionId:', docSessionId);
-      const savedDoc = await saveOwnerDocument({
-        id: updatedDoc.id,
-        ownerId: authUser.userId,
-        ownerName: updatedDoc.ownerName,
-        sessionId: docSessionId,
-        name: updatedDoc.name,
-        size: updatedDoc.size,
-        type: updatedDoc.type,
-        dataUrl: updatedDoc.dataUrl,
-        uploadedAt: updatedDoc.uploadedAt,
-        status: 'pending_review',
-      });
+      if (!notarizingDoc?.id) {
+        alert('Error: Document not found');
+        return;
+      }
 
-      // Broadcast to notary dashboard via socket.io with complete context
-      console.log('📡 [OWNER] Emitting documentNotarized event (pending review)');
-      socket.emit("documentNotarized", {
-        id: savedDoc.id,
-        sessionId: savedDoc.sessionId,
-        ownerId: savedDoc.ownerId,
-        ownerName: savedDoc.ownerName,
-        name: savedDoc.name,
-        size: savedDoc.size,
-        type: savedDoc.type,
-        uploadedAt: savedDoc.uploadedAt,
-        status: savedDoc.status,
-        notarized: savedDoc.notarized,
-      });
-      console.log("✅ [OWNER] Emitted documentNotarized event via socket");
+      console.log('📋 [OWNER] Sending document for notary review:', notarizingDoc.id);
+
+      const result = await notarizeOwnerDocument(notarizingDoc.id);
+
+      const updatedDoc = {
+        ...notarizingDoc,
+        ...result,
+        status: result.status || 'pending_review',
+        notaryReview: result.notaryReview || 'pending',
+        notarized: Boolean(result.notarized),
+      };
+
+      const updated = docs.map((d) =>
+        d.id === notarizingDoc.id ? updatedDoc : d
+      );
+      setDocs(updated);
+      saveDocs(updated);
+
+      setNotarizingDoc(null);
     } catch (error) {
-      console.error("❌ [OWNER] Failed to sync document to backend:", error);
+      console.error('❌ [OWNER] Notarization failed:', error);
+      alert(`Failed to notarize document: ${error.message}`);
+      setNotarizingDoc(null);
     }
-
-    setNotarizingDoc(null);
   };
 
   const formatSize = (bytes) => {

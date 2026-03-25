@@ -211,13 +211,14 @@ const NotaryMeetingsPage = () => {
       );
     }
 
-    if (status === 'uploaded' || status === 'pending_review' || status === 'pending') {
+    // Owner requested notarization: let notary accept/reject.
+    if (status === 'pending_review') {
       return (
-        <div className="inline-actions" style={{ marginTop: 0 }}>
-          <button className="notary-btn" disabled={saving} onClick={() => handleDecision(row.id, 'accepted')}>
+        <div className="inline-actions-table">
+          <button className="notary-btn table-btn" disabled={saving} onClick={() => handleDecision(row.id, 'accepted')}>
             Accept
           </button>
-          <button className="notary-btn secondary" disabled={saving} onClick={() => handleDecision(row.id, 'rejected')}>
+          <button className="notary-btn secondary table-btn" disabled={saving} onClick={() => handleDecision(row.id, 'rejected')}>
             Reject
           </button>
         </div>
@@ -227,25 +228,36 @@ const NotaryMeetingsPage = () => {
     const scheduledAtMs = row.scheduledAt ? new Date(row.scheduledAt).getTime() : null;
     const scheduledFuture = scheduledAtMs && Number.isFinite(scheduledAtMs) && Date.now() < scheduledAtMs;
 
+    // Accepted: show Start Session and Schedule
     if (status === 'accepted') {
       return (
-        <div className="inline-actions" style={{ marginTop: 0 }}>
-          <button className="notary-btn" disabled={saving || scheduledFuture} onClick={() => handleStartSession(row)}>
-            Start Session
+        <div className="inline-actions-table">
+          <button className="notary-btn table-btn" disabled={saving || scheduledFuture} onClick={() => handleStartSession(row)}>
+            Start
           </button>
-          <button className="notary-btn secondary" disabled={saving} onClick={() => handleScheduleMeeting(row)}>
+          <button className="notary-btn secondary table-btn" disabled={saving} onClick={() => handleScheduleMeeting(row)}>
             Schedule
           </button>
         </div>
       );
     }
 
-    if (status === 'session_started' && row.sessionId) {
+    // Session started: show Open Session
+    if ((status === 'session_started' || status === 'payment_pending') && row.sessionId) {
       return (
-        <button className="notary-btn secondary" onClick={() => navigate(`/notary?sessionId=${encodeURIComponent(row.sessionId)}&role=notary`)}>
+        <button className="notary-btn secondary table-btn" onClick={() => navigate(`/notary?sessionId=${encodeURIComponent(row.sessionId)}&role=notary`)}>
           Open Session
         </button>
       );
+    }
+
+    // All other statuses: no action buttons.
+    if (status === 'uploaded') {
+      return <span className="muted">Waiting for owner request</span>;
+    }
+
+    if (status === 'rejected') {
+      return <span className="muted">Rejected</span>;
     }
 
     return <span className="muted">-</span>;

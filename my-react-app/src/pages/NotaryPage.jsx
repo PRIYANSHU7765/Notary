@@ -654,10 +654,27 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
     })();
 
     let notarizedDataUrl = null;
-    const normalizedAmount = 25; // Fixed price of 25
-    if (pdfDataUrl) {
+    let pdfSourceForNotarization = pdfDataUrl;
+
+    // Fallback: if session does not currently hold shared PDF payload, pull it from owner document record.
+    if (!pdfSourceForNotarization && sessionId) {
       try {
-        const bytes = await generateNotarizedPdfBytes(pdfDataUrl, elements, {
+        const docs = await fetchOwnerDocuments({ sessionId });
+        const matchedDoc = Array.isArray(docs)
+          ? docs.find((doc) => String(doc.id || '') === String(targetDocumentId || ''))
+          : null;
+        if (matchedDoc?.dataUrl) {
+          pdfSourceForNotarization = matchedDoc.dataUrl;
+        }
+      } catch (error) {
+        console.warn('⚠️ [NOTARY] Failed to load document data for notarization fallback:', error?.message || error);
+      }
+    }
+
+    const normalizedAmount = 25; // Fixed price of 25
+    if (pdfSourceForNotarization) {
+      try {
+        const bytes = await generateNotarizedPdfBytes(pdfSourceForNotarization, elements, {
           editorWidth: EDITOR_WIDTH,
           editorHeight: EDITOR_HEIGHT,
         });
@@ -668,9 +685,12 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
     }
 
     if (!notarizedDataUrl) {
-      showToast('Unable to generate notarized PDF. Please try again.', 'error');
-      console.warn('⚠️ Notarization aborted: no notarized PDF available', { elements, pdfDataUrl });
-      return;
+      showToast('Could not generate the notarized PDF file. Continuing notarization without embedded PDF output.', 'info', 4200);
+      console.warn('⚠️ Proceeding without generated notarized PDF payload', {
+        hasElements: Array.isArray(elements) ? elements.length : 0,
+        hasLivePdfData: Boolean(pdfDataUrl),
+        hasResolvedPdfSource: Boolean(pdfSourceForNotarization),
+      });
     }
 
     try {
