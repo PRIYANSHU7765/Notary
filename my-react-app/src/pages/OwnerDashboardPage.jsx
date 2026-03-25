@@ -465,7 +465,7 @@ const SessionPaymentModal = ({
   );
 };
 
-const OwnerDashboardPage = () => {
+const OwnerDashboardPage = ({ setHideSidebar }) => {
   const restoredDashboardState = loadDashboardState();
   const [docs, setDocs] = useState([]);
   const [notarizingDoc, setNotarizingDoc] = useState(null);
@@ -1199,6 +1199,7 @@ const OwnerDashboardPage = () => {
       
       // Immediately show the editor view
       setSessionJoined(true);
+      if (setHideSidebar) setHideSidebar(true);
     }
   };
 
@@ -1280,6 +1281,7 @@ const OwnerDashboardPage = () => {
     setUploadedAsset(null);
     lastAutoSharedDocKeyRef.current = "";
     localStorage.removeItem(DASHBOARD_STATE_KEY);
+    localStorage.setItem('owner.sessionActive', 'false');
     // Also clear the active session for this document when exiting
     setActiveSessions((prev) => {
       const updated = { ...prev };
@@ -1287,7 +1289,8 @@ const OwnerDashboardPage = () => {
       return updated;
     });
 
-    navigate("/owner/doc/dashboard");
+    if (setHideSidebar) setHideSidebar(false);
+    navigate("/owner/dashboard");
   };
 
   const restoreUploadedAssets = () => {
@@ -1661,7 +1664,7 @@ const OwnerDashboardPage = () => {
       {/* If session joined, show editor view */}
       {activeSessionDocId && sessionJoined ? (
         <div style={{ display: "flex", height: "100vh" }}>
-          {/* Sidebar */}
+          {/* Asset Sidebar (owner session) */}
           <SidebarAssets
             userRole="owner"
             sessionId={activeSessions[activeSessionDocId] || previousSessions[activeSessionDocId]}
@@ -1691,7 +1694,7 @@ const OwnerDashboardPage = () => {
                       lineHeight: 1,
                       marginRight: "10px",
                     }}
-                    title="Back to Notaries"
+                    title="Back to Dashboard"
                   >
                     ←
                   </button>

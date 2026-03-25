@@ -2,6 +2,7 @@ import React, { Component } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import OwnerPage from './pages/OwnerPage'
 import OwnerDashboardPage from './pages/OwnerDashboardPage'
+import OwnerDocDashboardWrapper from './pages/OwnerDocDashboardWrapper'
 import OwnerHomeDashboardPage from './pages/OwnerHomeDashboardPage'
 import OwnerTransactionsPage from './pages/OwnerTransactionsPage'
 import OwnerMeetingsPage from './pages/OwnerMeetingsPage'
@@ -269,7 +270,7 @@ function App() {
               <RequireAuth>
                 <RequireRole allowedRoles={['owner']}>
                   <RequireKbaApproval>
-                    <OwnerDashboardPage />
+                    <OwnerDocDashboardWrapper />
                   </RequireKbaApproval>
                 </RequireRole>
               </RequireAuth>

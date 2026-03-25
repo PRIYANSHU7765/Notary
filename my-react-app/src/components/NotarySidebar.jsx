@@ -15,6 +15,7 @@ const MENU_BY_ROLE = {
     { id: 'home', label: 'Home', path: '/owner/dashboard' },
     { id: 'transactions', label: 'Transactions', path: '/owner/transactions' },
     { id: 'meetings', label: 'Meetings', path: '/owner/meetings' },
+    { id: 'upload', label: 'Upload document', path: '/owner/doc/dashboard' },
   ],
 };
 
@@ -29,6 +30,11 @@ const NotarySidebar = ({ role = 'notary', menuItems }) => {
       return null;
     }
   })();
+
+  const ownerSessionActive = localStorage.getItem('owner.sessionActive') === 'true';
+  if (ownerSessionActive) {
+    return null;
+  }
 
   const resolvedRole = role === 'owner' ? 'owner' : 'notary';
   const resolvedMenuItems = Array.isArray(menuItems) && menuItems.length > 0
