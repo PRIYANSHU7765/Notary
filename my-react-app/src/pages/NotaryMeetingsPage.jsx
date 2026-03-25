@@ -1,7 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NotaryWorkspaceShell from '../components/NotaryWorkspaceShell';
-import { fetchOwnerDocuments, fetchSessionRecordings } from '../utils/apiClient';
+import {
+  fetchOwnerDocuments,
+  fetchSessionRecordings,
+  markOwnerDocumentSessionStarted,
+  scheduleOwnerDocumentMeeting,
+  updateOwnerDocumentReview,
+} from '../utils/apiClient';
 import './NotaryWorkspacePages.css';
 
 const normalize = (value) => String(value || '').trim().toLowerCase();
@@ -18,14 +24,34 @@ const NotaryMeetingsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [documents, setDocuments] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [schedulingDocId, setSchedulingDocId] = useState(null);
+  const [selectedScheduleDate, setSelectedScheduleDate] = useState('');
+  const [selectedScheduleTime, setSelectedScheduleTime] = useState('');
   const [selectedPastSession, setSelectedPastSession] = useState(null);
   const [activeDetailsTab, setActiveDetailsTab] = useState('notary');
   const [recordingsLoading, setRecordingsLoading] = useState(false);
   const [recordingsError, setRecordingsError] = useState('');
   const [selectedSessionRecordings, setSelectedSessionRecordings] = useState([]);
 
+  const authUser = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem('notary.authUser') || 'null') || {};
+    } catch {
+      return {};
+    }
+  }, []);
+
+  const reloadDocuments = async () => {
+    const response = await fetchOwnerDocuments({});
+    setDocuments(Array.isArray(response) ? response : []);
+  };
+
   useEffect(() => {
     let active = true;
+    let pollInterval = null;
+
     const load = async () => {
       try {
         setLoading(true);
@@ -41,8 +67,19 @@ const NotaryMeetingsPage = () => {
     };
 
     load();
+
+    // Set up polling to refresh documents every 5 seconds
+    pollInterval = setInterval(() => {
+      if (active) {
+        reloadDocuments().catch(err => {
+          console.warn('Failed to reload documents:', err);
+        });
+      }
+    }, 5000);
+
     return () => {
       active = false;
+      if (pollInterval) clearInterval(pollInterval);
     };
   }, []);
 
@@ -56,17 +93,83 @@ const NotaryMeetingsPage = () => {
       const status = normalize(doc.status || doc.notaryReview);
       const scheduleTime = doc.scheduledAt ? new Date(doc.scheduledAt).getTime() : null;
 
-      if (status === 'session_started') {
-        current.push(doc);
-      } else if (scheduleTime && !Number.isNaN(scheduleTime) && scheduleTime > now && status !== 'notarized' && status !== 'rejected') {
+      if (status === 'notarized' || status === 'rejected') {
+        past.push(doc);
+      } else if (scheduleTime && !Number.isNaN(scheduleTime) && scheduleTime > now) {
         upcoming.push(doc);
       } else {
-        past.push(doc);
+        current.push(doc);
       }
     }
 
     return { current, upcoming, past };
   }, [documents]);
+
+  const handleDecision = async (docId, decision) => {
+    try {
+      setSaving(true);
+      const notaryName = authUser?.username || 'Notary';
+      const updated = await updateOwnerDocumentReview(docId, decision, notaryName);
+      setDocuments((prev) => prev.map((doc) => (doc.id === docId ? { ...doc, ...updated } : doc)));
+    } catch (err) {
+      setError(err?.message || 'Failed to update review status');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleScheduleMeeting = (doc) => {
+    setSchedulingDocId(doc.id);
+    setSelectedScheduleDate('');
+    setSelectedScheduleTime('');
+    setShowScheduleModal(true);
+  };
+
+  const handleConfirmSchedule = async () => {
+    if (!schedulingDocId || !selectedScheduleDate || !selectedScheduleTime) {
+      setError('Please select both schedule date and time');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const scheduledAt = new Date(`${selectedScheduleDate}T${selectedScheduleTime}`).toISOString();
+      const updated = await scheduleOwnerDocumentMeeting(schedulingDocId, scheduledAt);
+      setDocuments((prev) => prev.map((doc) => (doc.id === schedulingDocId ? { ...doc, ...updated } : doc)));
+      setShowScheduleModal(false);
+      setSchedulingDocId(null);
+      setSelectedScheduleDate('');
+      setSelectedScheduleTime('');
+      setError('');
+    } catch (err) {
+      setError(err?.message || 'Failed to schedule meeting');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleStartSession = async (doc) => {
+    if (!doc?.id || !doc?.sessionId) {
+      setError('Session is not available for this document');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const updated = await markOwnerDocumentSessionStarted(
+        doc.id,
+        doc.sessionId,
+        authUser?.username || 'Notary',
+        authUser?.userId || authUser?.id || null
+      );
+      setDocuments((prev) => prev.map((item) => (item.id === doc.id ? { ...item, ...updated } : item)));
+      navigate(`/notary?sessionId=${encodeURIComponent(doc.sessionId)}&role=notary&sessionStarted=true&documentId=${encodeURIComponent(doc.id)}`);
+    } catch (err) {
+      setError(err?.message || 'Failed to start session');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleOpenPastSessionDetails = async (row) => {
     const sessionId = String(row?.sessionId || '').trim();
@@ -96,6 +199,58 @@ const NotaryMeetingsPage = () => {
     setSelectedSessionRecordings([]);
   };
 
+  const renderActions = (row, type) => {
+    const status = normalize(row.status || row.notaryReview);
+
+    if (type === 'past') {
+      if (!row.sessionId) return <span className="muted">-</span>;
+      return (
+        <button className="notary-btn" onClick={() => handleOpenPastSessionDetails(row)}>
+          View
+        </button>
+      );
+    }
+
+    if (status === 'uploaded' || status === 'pending_review' || status === 'pending') {
+      return (
+        <div className="inline-actions" style={{ marginTop: 0 }}>
+          <button className="notary-btn" disabled={saving} onClick={() => handleDecision(row.id, 'accepted')}>
+            Accept
+          </button>
+          <button className="notary-btn secondary" disabled={saving} onClick={() => handleDecision(row.id, 'rejected')}>
+            Reject
+          </button>
+        </div>
+      );
+    }
+
+    const scheduledAtMs = row.scheduledAt ? new Date(row.scheduledAt).getTime() : null;
+    const scheduledFuture = scheduledAtMs && Number.isFinite(scheduledAtMs) && Date.now() < scheduledAtMs;
+
+    if (status === 'accepted') {
+      return (
+        <div className="inline-actions" style={{ marginTop: 0 }}>
+          <button className="notary-btn" disabled={saving || scheduledFuture} onClick={() => handleStartSession(row)}>
+            Start Session
+          </button>
+          <button className="notary-btn secondary" disabled={saving} onClick={() => handleScheduleMeeting(row)}>
+            Schedule
+          </button>
+        </div>
+      );
+    }
+
+    if (status === 'session_started' && row.sessionId) {
+      return (
+        <button className="notary-btn secondary" onClick={() => navigate(`/notary?sessionId=${encodeURIComponent(row.sessionId)}&role=notary`)}>
+          Open Session
+        </button>
+      );
+    }
+
+    return <span className="muted">-</span>;
+  };
+
   const renderMeetingTable = (rows, type) => {
     if (rows.length === 0) {
       return <div className="empty-block">No {type} sessions found.</div>;
@@ -110,41 +265,30 @@ const NotaryMeetingsPage = () => {
               <th>Owner</th>
               <th>Session ID</th>
               <th>Scheduled Time</th>
+              <th>Start Time</th>
+              <th>End Time</th>
               <th>Status</th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td>{row.name || row.documentName || '-'}</td>
-                <td>{row.ownerName || row.ownerId || '-'}</td>
-                <td>{row.sessionId || '-'}</td>
-                <td>{formatDate(row.scheduledAt)}</td>
-                <td>{row.status || row.notaryReview || '-'}</td>
-                <td>
-                  {type === 'past' && row.sessionId ? (
-                    <button
-                      className="notary-btn"
-                      onClick={() => handleOpenPastSessionDetails(row)}
-                    >
-                      View
-                    </button>
-                  ) : row.sessionId ? (
-                    <button
-                      className="notary-btn secondary"
-                      onClick={() => navigate(`/notary?sessionId=${encodeURIComponent(row.sessionId)}&role=notary`)}
-                    >
-                      Open Session
-                    </button>
-                  ) : (
-                    <button className="notary-btn secondary" onClick={() => navigate('/notary/doc/dashboard')}>
-                      View Queue
-                    </button>
-                  )}
-                </td>
+            {rows.map((row) => {
+              const startTime = row.startedAt || row.scheduledAt || row.startTime || row.startedDate;
+              const endTime = row.endedAt || row.completedAt || row.endTime;
+
+              return (
+                <tr key={row.id}>
+                  <td>{row.name || row.documentName || '-'}</td>
+                  <td>{row.ownerName || row.ownerId || '-'}</td>
+                  <td>{row.sessionId || '-'}</td>
+                  <td>{formatDate(row.scheduledAt)}</td>
+                  <td>{formatDate(startTime)}</td>
+                  <td>{formatDate(endTime)}</td>
+                  <td>{row.status || row.notaryReview || '-'}</td>
+                  <td>{renderActions(row, type)}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -172,6 +316,17 @@ const NotaryMeetingsPage = () => {
                 <p className="kpi-label">Past</p>
                 <p className="kpi-value small">{categorized.past.length}</p>
               </div>
+              <div className="kpi-item">
+                <p className="kpi-label">Quick Actions</p>
+                <div className="inline-actions quick-actions" style={{ justifyContent: 'flex-start', marginTop: 8 }}>
+                  <button className="notary-btn" onClick={reloadDocuments}>
+                    Refresh
+                  </button>
+                  <button className="notary-btn secondary" onClick={() => navigate('/notary')}>
+                    Open Live Session Workspace
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -195,6 +350,36 @@ const NotaryMeetingsPage = () => {
               <div className="notary-card-header">Past Sessions</div>
               <div className="notary-card-body">{renderMeetingTable(categorized.past, 'past')}</div>
             </section>
+
+            {showScheduleModal ? (
+              <div className="session-details-overlay" onClick={() => setShowScheduleModal(false)}>
+                <div className="session-details-panel" onClick={(e) => e.stopPropagation()}>
+                  <div className="session-details-header">
+                    <h3>Schedule Meeting</h3>
+                  </div>
+                  <div className="session-details-body">
+                    <div className="form-grid">
+                      <div className="form-row">
+                        <label>Date</label>
+                        <input type="date" value={selectedScheduleDate} onChange={(e) => setSelectedScheduleDate(e.target.value)} />
+                      </div>
+                      <div className="form-row">
+                        <label>Time</label>
+                        <input type="time" value={selectedScheduleTime} onChange={(e) => setSelectedScheduleTime(e.target.value)} />
+                      </div>
+                    </div>
+                    <div className="inline-actions">
+                      <button className="notary-btn secondary" onClick={() => setShowScheduleModal(false)}>
+                        Cancel
+                      </button>
+                      <button className="notary-btn" disabled={saving} onClick={handleConfirmSchedule}>
+                        Save Schedule
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             <SessionDetailsModal
               session={selectedPastSession}

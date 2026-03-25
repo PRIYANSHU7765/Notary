@@ -1,12 +1,18 @@
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(180px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .kpi-item {
   padding: 16px;
   border-right: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .kpi-item:last-child {
@@ -79,8 +85,32 @@
 
 .inline-actions {
   display: flex;
-  gap: 10px;
-  margin-top: 10px;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.inline-actions.quick-actions {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.inline-actions.quick-actions .notary-btn {
+  height: 36px;
+  font-size: 12px;
+  padding: 0 10px;
+  width: 100%;
+  white-space: normal;
+  word-break: break-word;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.inline-actions.quick-actions .notary-btn.secondary {
+  width: 100%;
 }
 
 .status-chip {
@@ -306,7 +336,7 @@
 
 @media (max-width: 1150px) {
   .kpi-grid {
-    grid-template-columns: repeat(2, minmax(180px, 1fr));
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
   }
 
   .section-grid {

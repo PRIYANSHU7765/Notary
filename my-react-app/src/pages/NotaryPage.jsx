@@ -257,7 +257,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
 
         window.setTimeout(() => {
-          navigate("/notary/doc/dashboard");
+          navigate("/notary/meetings");
         }, 200);
       };
 
@@ -286,7 +286,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
 
         window.setTimeout(() => {
-          navigate("/notary/doc/dashboard");
+          navigate("/notary/meetings");
         }, 200);
       };
 
@@ -614,7 +614,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
     params.delete("documentId");
     window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
 
-    navigate("/notary/doc/dashboard");
+    navigate("/notary/meetings");
   };
 
   const handleMarkNotarized = async () => {

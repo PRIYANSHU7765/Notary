@@ -80,21 +80,122 @@
 }
 
 .notary-table-wrap {
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
+  border-radius: 8px;
+  max-height: calc(100vh - 280px);
+  -webkit-overflow-scrolling: touch;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
 }
 
 .notary-table {
   width: 100%;
+  min-width: 1000px;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .notary-table th,
 .notary-table td {
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-bottom: 1px solid #e2e8f0;
   text-align: left;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+
+.notary-table th {
+  background: #f9fbff;
+  color: #1f3e6c;
+}
+
+
+.notary-table th {
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.notary-table td {
+  font-size: 14px;
+}
+
+.notary-table th:nth-child(1),
+.notary-table td:nth-child(1) {
+  min-width: 220px;
+  max-width: 240px;
+}
+
+.notary-table th:nth-child(2),
+.notary-table td:nth-child(2) {
+  min-width: 120px;
+}
+
+.notary-table th:nth-child(3),
+.notary-table td:nth-child(3) {
+  min-width: 190px;
+}
+
+.notary-table th:nth-child(8),
+.notary-table td:nth-child(8) {
+  text-align: center;
+  min-width: 150px;
+}
+
+.notary-table tbody tr:hover {
+  background: #f4f7fb;
+}
+
+.notary-table td .notary-btn {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.notary-table th:nth-child(1),
+.notary-table td:nth-child(1) {
+  min-width: 260px;
+  max-width: 280px;
+}
+
+.notary-table th:nth-child(2),
+.notary-table td:nth-child(2) {
+  min-width: 120px;
+  max-width: 140px;
+}
+
+.notary-table th:nth-child(3),
+.notary-table td:nth-child(3) {
+  min-width: 220px;
+  max-width: 260px;
+}
+
+.notary-table th:nth-child(4),
+.notary-table td:nth-child(4),
+.notary-table th:nth-child(5),
+.notary-table td:nth-child(5),
+.notary-table th:nth-child(6),
+.notary-table td:nth-child(6) {
+  min-width: 120px;
+  max-width: 150px;
+}
+
+.notary-table th:nth-child(7),
+.notary-table td:nth-child(7) {
+  min-width: 110px;
+  max-width: 130px;
+}
+
+.notary-table th:nth-child(8),
+.notary-table td:nth-child(8) {
+  min-width: 150px;
+  max-width: 180px;
+  text-align: center;
+}
+
+
 
 .notary-table th {
   font-size: 12px;

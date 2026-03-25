@@ -40,6 +40,13 @@ const NotarySidebar = ({ role = 'notary', menuItems }) => {
   const resolvedMenuItems = Array.isArray(menuItems) && menuItems.length > 0
     ? menuItems
     : MENU_BY_ROLE[resolvedRole];
+  const menuItems = [
+    { id: 'home', label: 'Home', path: '/notary/dashboard' },
+    { id: 'transactions', label: 'Transactions', path: '/notary/transactions' },
+    { id: 'witness', label: 'Witness', path: '/notary/witness' },
+    { id: 'meetings', label: 'Meetings', path: '/notary/meetings' },
+    { id: 'settings', label: 'Settings', path: '/notary/settings' },
+  ];
 
   const handleLogout = () => {
     localStorage.removeItem('notary.authUser');
@@ -53,6 +60,7 @@ const NotarySidebar = ({ role = 'notary', menuItems }) => {
       <div className="sidebar-header">
         <div className="sidebar-brand">
           <span className="brand-text">{resolvedRole === 'owner' ? 'Owners' : 'Notaries'}</span>
+          <span className="brand-text">Notarize Pro</span>
         </div>
       </div>
 

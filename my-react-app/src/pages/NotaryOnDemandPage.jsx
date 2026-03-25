@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import NotaryWorkspaceShell from '../components/NotaryWorkspaceShell';
 import './NotaryWorkspacePages.css';
 
-const STORAGE_KEY = 'notary.onDemand.preferences';
+const STORAGE_KEY = 'notary.witness.preferences';
 
 const defaultPreferences = {
   location: '',
@@ -10,14 +10,10 @@ const defaultPreferences = {
   witnessSessionMode: 'manual',
   autoAcceptWitnessSessions: false,
   requireRecording: true,
-  videoDeviceId: '',
-  audioDeviceId: '',
-  outputDeviceId: '',
 };
 
 const NotaryOnDemandPage = () => {
   const [preferences, setPreferences] = useState(defaultPreferences);
-  const [devices, setDevices] = useState({ videos: [], audios: [], outputs: [] });
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
@@ -31,36 +27,13 @@ const NotaryOnDemandPage = () => {
     }
   }, []);
 
-  useEffect(() => {
-    const loadDevices = async () => {
-      if (!navigator.mediaDevices?.enumerateDevices) {
-        return;
-      }
-
-      try {
-        await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      } catch {
-        // labels might be hidden if permission is denied; device IDs are still useful
-      }
-
-      const all = await navigator.mediaDevices.enumerateDevices();
-      setDevices({
-        videos: all.filter((d) => d.kind === 'videoinput'),
-        audios: all.filter((d) => d.kind === 'audioinput'),
-        outputs: all.filter((d) => d.kind === 'audiooutput'),
-      });
-    };
-
-    loadDevices();
-  }, []);
-
   const actions = useMemo(
     () => (
       <button
         className="notary-btn"
         onClick={() => {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
-          setNotice('On demand preferences saved successfully.');
+          setNotice('Witness preferences saved successfully.');
           window.setTimeout(() => setNotice(''), 2400);
         }}
       >
@@ -93,7 +66,7 @@ const NotaryOnDemandPage = () => {
 
   return (
     <NotaryWorkspaceShell
-      title="On demand"
+      title="Witness"
       subtitle="Manage location, device preferences, witness sessions, and availability settings"
       actions={actions}
     >
@@ -158,58 +131,6 @@ const NotaryOnDemandPage = () => {
               <button className="notary-btn secondary" onClick={setCurrentLocation}>
                 Use Current Location
               </button>
-            </div>
-          </div>
-        </section>
-
-        <section className="notary-card">
-          <div className="notary-card-header">Device Preferences</div>
-          <div className="notary-card-body">
-            <div className="form-grid">
-              <div className="form-row">
-                <label>Camera</label>
-                <select
-                  value={preferences.videoDeviceId}
-                  onChange={(e) => setField('videoDeviceId', e.target.value)}
-                >
-                  <option value="">Default Camera</option>
-                  {devices.videos.map((device) => (
-                    <option key={device.deviceId} value={device.deviceId}>
-                      {device.label || `Camera ${device.deviceId.slice(0, 8)}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-row">
-                <label>Microphone</label>
-                <select
-                  value={preferences.audioDeviceId}
-                  onChange={(e) => setField('audioDeviceId', e.target.value)}
-                >
-                  <option value="">Default Microphone</option>
-                  {devices.audios.map((device) => (
-                    <option key={device.deviceId} value={device.deviceId}>
-                      {device.label || `Microphone ${device.deviceId.slice(0, 8)}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-row">
-                <label>Speaker</label>
-                <select
-                  value={preferences.outputDeviceId}
-                  onChange={(e) => setField('outputDeviceId', e.target.value)}
-                >
-                  <option value="">Default Speaker</option>
-                  {devices.outputs.map((device) => (
-                    <option key={device.deviceId} value={device.deviceId}>
-                      {device.label || `Speaker ${device.deviceId.slice(0, 8)}`}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
           </div>
         </section>
