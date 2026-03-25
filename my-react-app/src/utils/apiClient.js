@@ -8,8 +8,16 @@ const isDev = Boolean(import.meta.env.DEV);
 const API_BASE_STORAGE_KEY = 'notary.apiBaseUrl';
 const API_BASE_CANDIDATES = [
   configuredApiBaseUrl,
-  ...(isDev ? ['', 'http://localhost:5001', 'http://localhost:5002', 'http://localhost:5000'] : []),
-].filter((v) => v !== undefined && v !== null); // keep '' in the list
+  (typeof window !== 'undefined' ? window.location.origin : ''),
+  ...(isDev ? ['http://localhost:5001', 'http://localhost:5002', 'http://localhost:5000'] : []),
+].filter((v) => typeof v === 'string' && v.trim() !== '');
+
+// Deduplicate while preserving order
+const uniqueCandidates = [...new Set(API_BASE_CANDIDATES)];
+
+const finalApiCandidates = uniqueCandidates.length ? uniqueCandidates : ['http://localhost:5001'];
+
+const API_CANDIDATES = finalApiCandidates;
 
 const storedApiBaseUrl =
   (typeof window !== 'undefined' && window.localStorage.getItem(API_BASE_STORAGE_KEY)) ||
@@ -22,10 +30,10 @@ if (typeof window !== 'undefined' && configuredApiBaseUrl && storedApiBaseUrl &&
 let lastWorkingApiBaseUrl =
   configuredApiBaseUrl ||
   storedApiBaseUrl ||
-  API_BASE_CANDIDATES[0];
+  API_CANDIDATES[0];
 
 const getBaseUrlPriority = () => {
-  const ordered = [lastWorkingApiBaseUrl, ...API_BASE_CANDIDATES];
+  const ordered = [lastWorkingApiBaseUrl, ...API_CANDIDATES];
   return [...new Set(ordered)];
 };
 
@@ -780,7 +788,7 @@ async function rejectKbaSubmission(userId, reason) {
 }
 
 function getKbaDocumentUrl(userId, side = 'front') {
-  const baseUrl = lastWorkingApiBaseUrl || API_BASE_CANDIDATES[0] || '';
+  const baseUrl = lastWorkingApiBaseUrl || API_CANDIDATES[0] || '';
   const token = getAuthToken();
   return `${baseUrl}/api/admin/kba/${userId}/document?side=${encodeURIComponent(side)}${token ? `&auth=${encodeURIComponent(token)}` : ''}`;
 }

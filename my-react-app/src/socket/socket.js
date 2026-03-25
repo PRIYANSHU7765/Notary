@@ -1,8 +1,9 @@
 import io from "socket.io-client";
 
-// Detect socket server URL based on current host
+// Detect socket server URL based on current host and env variables
 const getSocketUrl = () => {
   const env =
+    import.meta.env.VITE_SOCKET_URL ||
     import.meta.env.VITE_API_BASE_URL ||
     import.meta.env.VITE_API_URL ||
     import.meta.env.VITE_REACT_APP_SERVER_URL;
@@ -11,17 +12,28 @@ const getSocketUrl = () => {
     window.location.hostname === 'localhost' ||
     window.location.hostname === '127.0.0.1';
 
-  // On localhost: use the backend port (or env override)
+  const fallbackUrls = [
+    env,
+    window.location.origin,
+    'http://localhost:5001',
+    'http://localhost:5000',
+    'http://localhost:5002',
+  ].filter((url) => !!url);
+
+  if (fallbackUrls.length === 0) {
+    console.warn('[Socket] No socket URL candidate found; defaulting to window.origin');
+    return window.location.origin;
+  }
+
   if (isLocalhost) {
     return env || 'http://localhost:5001';
   }
 
-  // On ngrok/remote: ALWAYS use the current page origin (no localhost override)
-  return window.location.origin;
+  return env || window.location.origin;
 };
 
 const SOCKET_SERVER_URL = getSocketUrl();
-console.log('[Socket] Connecting to:', SOCKET_SERVER_URL);
+console.log('[Socket] Socket URL candidate:', SOCKET_SERVER_URL);
 
 let socket = null;
 
@@ -30,7 +42,9 @@ try {
     reconnection: true,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
-    reconnectionAttempts: 5,
+    reconnectionAttempts: 10,
+    transports: ['websocket', 'polling'],
+    timeout: 20000,
   });
 
   // Connection events
@@ -44,6 +58,13 @@ try {
 
   socket.on("connect_error", (error) => {
     console.warn("⚠️ Socket connection error (this is normal if backend isn't running):", error.message);
+    // Show more user-friendly message in console, but keep retrying
+    setTimeout(() => {
+      if (socket?.disconnected) {
+        console.log('[Socket] reconnect attempt (connect_error)');
+        socket.connect();
+      }
+    }, 1500);
   });
 } catch (error) {
   console.warn("Socket.io initialization error:", error.message);
