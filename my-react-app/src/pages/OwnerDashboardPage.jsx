@@ -83,6 +83,21 @@ const saveEditorElements = (docId, elements) => {
   localStorage.setItem(getEditorElementsStorageKey(docId), JSON.stringify(elements));
 };
 
+const normalizeSessionId = (value) => {
+  if (!value) return "";
+  const raw = String(value).trim();
+  const match = raw.match(/notary-session-[A-Za-z0-9_-]+/);
+  return match ? match[0] : raw;
+};
+
+const resolveDocSessionId = (doc, activeSessions = {}, previousSessions = {}) =>
+  normalizeSessionId(
+    activeSessions?.[doc?.id] ||
+      doc?.sessionId ||
+      previousSessions?.[doc?.id] ||
+      ""
+  );
+
 const formatDate = (iso) => {
   const d = new Date(iso);
   return d.toLocaleDateString("en-US", {
@@ -627,7 +642,8 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
   useEffect(() => {
     if (!sessionJoined || !activeSessionDocId || !uploadedFile || notaries.length === 0) return;
 
-    const sessionIdToShare = activeSessions[activeSessionDocId] || previousSessions[activeSessionDocId];
+    const activeDoc = docs.find((d) => d.id === activeSessionDocId);
+    const sessionIdToShare = resolveDocSessionId(activeDoc, activeSessions, previousSessions);
     if (!sessionIdToShare) return;
 
     const resolvedFileName = uploadedFileName || sessionDocName || "document.pdf";
@@ -643,6 +659,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
   }, [
     sessionJoined,
     activeSessionDocId,
+    docs,
     activeSessions,
     previousSessions,
     uploadedFile,
@@ -1034,11 +1051,9 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
     const activeDoc = docs.find((doc) => doc.id === activeSessionDocId);
     const sessionIdFromUrl = new URLSearchParams(window.location.search).get("sessionId");
     const sessionIdToJoin =
-      activeSessions[activeSessionDocId] ||
-      previousSessions[activeSessionDocId] ||
-      activeDoc?.sessionId ||
-      sessionIdFromUrl ||
-      localStorage.getItem("notary.ownerSessionId");
+      resolveDocSessionId(activeDoc, activeSessions, previousSessions) ||
+      normalizeSessionId(sessionIdFromUrl) ||
+      normalizeSessionId(localStorage.getItem("notary.ownerSessionId"));
     if (!sessionIdToJoin) return;
 
     setActiveSessions((prev) => {
@@ -1128,13 +1143,19 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
     socket.on("elementRemoved", onElementRemoved);
     socket.on("documentScrolled", onDocumentScrolled);
 
-    socket.emit("joinSession", {
-      roomId: sessionIdToJoin,
-      role: "owner",
-      userId: authUser?.userId || socket.id,
-      username: authUser?.username || "Owner",
-      token: authUser?.token,
-    });
+    const emitJoinSession = () => {
+      socket.emit("joinSession", {
+        roomId: sessionIdToJoin,
+        role: "owner",
+        userId: authUser?.userId || socket.id,
+        username: authUser?.username || "Owner",
+        token: authUser?.token,
+      });
+    };
+
+    const onConnectRejoin = () => emitJoinSession();
+    socket.on("connect", onConnectRejoin);
+    emitJoinSession();
 
     return () => {
       socket.off("usersConnected", onUsersConnected);
@@ -1143,6 +1164,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
       socket.off("elementUpdated", onElementUpdated);
       socket.off("elementRemoved", onElementRemoved);
       socket.off("documentScrolled", onDocumentScrolled);
+      socket.off("connect", onConnectRejoin);
     };
   }, [activeSessionDocId, activeSessions, previousSessions, docs]);
 
@@ -1150,9 +1172,9 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
   useEffect(() => {
     if (!activeSessionDocId || !sessionJoined) return;
 
+    const activeDoc = docs.find((d) => d.id === activeSessionDocId);
     const activeSessionId =
-      activeSessions[activeSessionDocId] ||
-      previousSessions[activeSessionDocId] ||
+      resolveDocSessionId(activeDoc, activeSessions, previousSessions) ||
       currentSessionIdRef.current;
     if (!activeSessionId) return;
 
@@ -1199,7 +1221,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
       }
       targets.forEach((target) => target.removeEventListener("scroll", handleScroll));
     };
-  }, [activeSessionDocId, activeSessions, previousSessions, sessionJoined, uploadedFile]);
+  }, [activeSessionDocId, docs, activeSessions, previousSessions, sessionJoined, uploadedFile]);
 
   // Cleanup effect: Emit ownerLeftSession when exiting a session
   useEffect(() => {
@@ -1214,10 +1236,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
 
   const handleJoinSession = (doc) => {
     // Resolve only from document-specific session sources.
-    const sessionIdVal =
-      activeSessions[doc.id] ||
-      previousSessions[doc.id] ||
-      doc.sessionId;
+    const sessionIdVal = resolveDocSessionId(doc, activeSessions, previousSessions);
     if (sessionIdVal) {
       // Keep URL/session state aligned with the exact session being resumed.
       setSessionId(sessionIdVal);
@@ -1254,7 +1273,8 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
       setUploadedFile(doc.dataUrl);
       setUploadedFileName(doc.name || "document.pdf");
       // Share document with notary via socket
-      const sessionIdVal = activeSessions[activeSessionDocId] || previousSessions[activeSessionDocId];
+      const activeDoc = docs.find((d) => d.id === activeSessionDocId);
+      const sessionIdVal = resolveDocSessionId(activeDoc, activeSessions, previousSessions);
       if (sessionIdVal) {
         setSessionId(sessionIdVal);
         localStorage.setItem("notary.ownerSessionId", sessionIdVal);
@@ -1288,7 +1308,8 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
 
   const handleEditorElementAdd = (element) => {
     setEditorElements((prev) => [...prev, element]);
-    const sessionIdVal = activeSessions[activeSessionDocId] || previousSessions[activeSessionDocId];
+    const activeDoc = docs.find((d) => d.id === activeSessionDocId);
+    const sessionIdVal = resolveDocSessionId(activeDoc, activeSessions, previousSessions);
     if (sessionIdVal) socket.emit("elementAdded", element);
   };
 
@@ -1298,13 +1319,15 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
       ...updates,
     };
     setEditorElements((prev) => prev.map((el) => (el.id === elementId ? updatedElement : el)));
-    const sessionIdVal = activeSessions[activeSessionDocId] || previousSessions[activeSessionDocId];
+    const activeDoc = docs.find((d) => d.id === activeSessionDocId);
+    const sessionIdVal = resolveDocSessionId(activeDoc, activeSessions, previousSessions);
     if (sessionIdVal) socket.emit("elementUpdated", updatedElement);
   };
 
   const handleEditorElementRemove = (elementId) => {
     setEditorElements((prev) => prev.filter((el) => el.id !== elementId));
-    const sessionIdVal = activeSessions[activeSessionDocId] || previousSessions[activeSessionDocId];
+    const activeDoc = docs.find((d) => d.id === activeSessionDocId);
+    const sessionIdVal = resolveDocSessionId(activeDoc, activeSessions, previousSessions);
     if (sessionIdVal) socket.emit("elementRemoved", elementId);
   };
 
@@ -1680,7 +1703,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
           {/* Asset Sidebar (owner session) */}
           <SidebarAssets
             userRole="owner"
-            sessionId={activeSessions[activeSessionDocId] || previousSessions[activeSessionDocId]}
+            sessionId={resolveDocSessionId(docs.find((d) => d.id === activeSessionDocId), activeSessions, previousSessions)}
             userId={authUser.userId}
             uploadedAsset={uploadedAsset}
             uploadedAssets={uploadedAssets}
@@ -1741,7 +1764,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
             {/* Screen Sharing + Document Editor */}
             <ScreenRecorder
               role="owner"
-              sessionId={activeSessions[activeSessionDocId] || previousSessions[activeSessionDocId] || ""}
+              sessionId={resolveDocSessionId(docs.find((d) => d.id === activeSessionDocId), activeSessions, previousSessions) || ""}
               socket={socket}
             />
             <div style={{ marginBottom: "15px", padding: "15px", backgroundColor: "#f5f5f5", borderRadius: "5px" }}>

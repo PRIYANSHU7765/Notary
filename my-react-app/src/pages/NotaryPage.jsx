@@ -328,14 +328,20 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       socket.on('documentPaymentRequested', onDocumentPaymentRequested);
       socket.on('ownerPaymentCompleted', onOwnerPaymentCompleted);
 
-      console.log('📡 [NOTARY] Joining session:', {roomId: sessionId, role: 'notary', userId: authUser.userId});
-      socket.emit("joinSession", {
-        roomId: sessionId,
-        role: "notary",
-        userId: authUser.userId || socket.id,
-        username: authUser.username || "Notary",
-        token: authUser.token,
-      });
+      const emitJoinSession = () => {
+        console.log('📡 [NOTARY] Joining session:', { roomId: sessionId, role: 'notary', userId: authUser.userId });
+        socket.emit("joinSession", {
+          roomId: sessionId,
+          role: "notary",
+          userId: authUser.userId || socket.id,
+          username: authUser.username || "Notary",
+          token: authUser.token,
+        });
+      };
+
+      const onConnectRejoin = () => emitJoinSession();
+      socket.on("connect", onConnectRejoin);
+      emitJoinSession();
 
       // Check if this is a fresh session start (sessionStarted=true in URL)
       const params = new URLSearchParams(window.location.search);
@@ -399,7 +405,9 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         socket.off("adminSessionTerminated", onAdminSessionTerminated);
         socket.off("notarySessionStartRejected", onNotarySessionStartRejected);
         socket.off("documentScrolled", onDocumentScrolled);
+        socket.off("documentPaymentRequested", onDocumentPaymentRequested);
         socket.off('ownerPaymentCompleted', onOwnerPaymentCompleted);
+        socket.off("connect", onConnectRejoin);
       };
     }
   }, [sessionJoined, sessionId, documentId, navigate]);

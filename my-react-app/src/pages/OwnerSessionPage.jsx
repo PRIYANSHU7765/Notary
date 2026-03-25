@@ -11,6 +11,13 @@ const getAuthUser = () => {
   }
 };
 
+const normalizeSessionId = (value) => {
+  if (!value) return "";
+  const raw = String(value).trim();
+  const match = raw.match(/notary-session-[A-Za-z0-9_-]+/);
+  return match ? match[0] : raw;
+};
+
 const OwnerSessionPage = () => {
   const [notaries, setNotaries] = useState([]);
   const [sessionId, setSessionId] = useState("");
@@ -30,23 +37,27 @@ const OwnerSessionPage = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const id = localStorage.getItem("notary.ownerSessionId") || "";
+    const id = normalizeSessionId(localStorage.getItem("notary.ownerSessionId") || "");
     setSessionId(id);
 
     if (!id) return;
 
     const authUser = getAuthUser();
 
-    // Re-join the owner session to get live usersConnected updates
-    socket.emit("joinSession", {
-      roomId: id,
-      role: "owner",
-      userId: authUser?.userId || socket.id,
-      username: authUser?.username || "Owner",
-      token: authUser?.token,
-    });
+    const emitJoinSession = () => {
+      socket.emit("joinSession", {
+        roomId: id,
+        role: "owner",
+        userId: authUser?.userId || socket.id,
+        username: authUser?.username || "Owner",
+        token: authUser?.token,
+      });
+    };
 
-    const onConnect = () => setIsConnected(true);
+    const onConnect = () => {
+      setIsConnected(true);
+      emitJoinSession();
+    };
     const onDisconnect = () => setIsConnected(false);
 
     const onUsersConnected = (users) => {
@@ -96,6 +107,13 @@ const OwnerSessionPage = () => {
       setPaymentError("");
     };
 
+    const onAuthError = (data) => {
+      alert(data?.message || "Unable to join session. Please login again.");
+      navigate("/auth", { replace: true });
+    };
+
+    emitJoinSession();
+
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
     socket.on("usersConnected", onUsersConnected);
@@ -103,6 +121,7 @@ const OwnerSessionPage = () => {
     socket.on("adminSessionTerminated", onAdminSessionTerminated);
     socket.on("documentPaymentRequested", onDocumentPaymentRequested);
     socket.on("ownerPaymentCompleted", onOwnerPaymentCompleted);
+    socket.on("authError", onAuthError);
 
     return () => {
       socket.off("connect", onConnect);
@@ -112,8 +131,9 @@ const OwnerSessionPage = () => {
       socket.off("adminSessionTerminated", onAdminSessionTerminated);
       socket.off("documentPaymentRequested", onDocumentPaymentRequested);
       socket.off("ownerPaymentCompleted", onOwnerPaymentCompleted);
+      socket.off("authError", onAuthError);
     };
-  }, []);
+  }, [navigate]);
 
   useEffect(() => {
     if (!sessionId) return;

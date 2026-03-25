@@ -25,6 +25,13 @@ const formatDate = (iso) => {
   });
 };
 
+const normalizeSessionId = (value) => {
+  if (!value) return "";
+  const raw = String(value).trim();
+  const match = raw.match(/notary-session-[A-Za-z0-9_-]+/);
+  return match ? match[0] : raw;
+};
+
 const OwnerDocumentViewPage = () => {
   const { docId } = useParams();
   const navigate = useNavigate();
@@ -240,7 +247,9 @@ const OwnerDocumentViewPage = () => {
                     {doc.sessionId && (
                       <button
                         onClick={() => {
-                          localStorage.setItem("notary.ownerSessionId", doc.sessionId);
+                          const normalizedSessionId = normalizeSessionId(doc.sessionId);
+                          localStorage.setItem("notary.ownerSessionId", normalizedSessionId);
+                          localStorage.setItem("notary.lastSessionId", normalizedSessionId);
                           navigate("/owner/session");
                         }}
                         style={{
