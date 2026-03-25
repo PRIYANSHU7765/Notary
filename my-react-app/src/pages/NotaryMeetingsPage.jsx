@@ -50,6 +50,8 @@ const NotaryMeetingsPage = () => {
 
   useEffect(() => {
     let active = true;
+    let pollInterval = null;
+
     const load = async () => {
       try {
         setLoading(true);
@@ -65,8 +67,19 @@ const NotaryMeetingsPage = () => {
     };
 
     load();
+
+    // Set up polling to refresh documents every 5 seconds
+    pollInterval = setInterval(() => {
+      if (active) {
+        reloadDocuments().catch(err => {
+          console.warn('Failed to reload documents:', err);
+        });
+      }
+    }, 5000);
+
     return () => {
       active = false;
+      if (pollInterval) clearInterval(pollInterval);
     };
   }, []);
 

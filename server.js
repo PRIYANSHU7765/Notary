@@ -3375,6 +3375,17 @@ app.put('/api/owner-documents/:id/notarize', requireAuth, requireRole(['notary']
     const { id } = req.params;
     const { notaryName, notarizedDataUrl, sessionAmount } = req.body;
 
+    const existing = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+    if (!existing) {
+      return res.status(404).json({ error: 'Owner document not found' });
+    }
+    if (existing.notaryId && String(existing.notaryId) !== String(req.auth?.userId || '')) {
+      return res.status(409).json({ error: 'This document is locked by another notary' });
+    }
+    if (existing.notaryId && String(existing.notaryId) !== String(req.auth?.userId || '')) {
+      return res.status(409).json({ error: 'This document is locked by another notary' });
+    }
+
     const nowMs = now();
     const parsedAmount = Number(sessionAmount);
     const normalizedAmount = Number.isFinite(parsedAmount) && parsedAmount >= 0 ? Number(parsedAmount.toFixed(2)) : 0;
@@ -3406,6 +3417,7 @@ app.put('/api/owner-documents/:id/notarize', requireAuth, requireRole(['notary']
           notarized = :notarized,
           notarizedAt = :notarizedAt,
           notaryReview = 'accepted',
+          notaryId = :notaryId,
           notaryName = :notaryName,
           notarizedDataUrl = :notarizedDataUrl,
           notarizedPath = :notarizedPath,
@@ -3424,6 +3436,7 @@ app.put('/api/owner-documents/:id/notarize', requireAuth, requireRole(['notary']
         inProcess: paymentRequired ? 1 : 0,
         notarized: paymentRequired ? 0 : 1,
         notarizedAt: paymentRequired ? null : nowMs,
+        notaryId: existing.notaryId || req.auth.userId,
         notaryName: notaryName || 'Unknown Notary',
         notarizedDataUrl: notarizedDataUrl || null,
         notarizedPath,
@@ -3644,6 +3657,7 @@ app.get('/api/owner-documents', requireAuth, (req, res) => {
     const { ownerId, sessionId, inProcess, notarized, status } = req.query;
     const currentRole = normalizeRole(req.auth?.role);
     const forcedOwnerId = currentRole === 'owner' ? req.auth.userId : ownerId;
+    const viewerNotaryId = currentRole === 'notary' ? String(req.auth?.userId || '') : null;
 
     const inProcessFilter = inProcess === undefined ? null : (inProcess === '1' || inProcess === 'true' ? 1 : 0);
     const notarizedFilter = notarized === undefined ? null : (notarized === '1' || notarized === 'true' ? 1 : 0);
@@ -3656,6 +3670,11 @@ app.get('/api/owner-documents', requireAuth, (req, res) => {
          AND (:inProcess IS NULL OR inProcess = :inProcess)
          AND (:notarized IS NULL OR notarized = :notarized)
          AND (:status IS NULL OR status = :status)
+         AND (
+           :currentRole != 'notary'
+           OR notaryId IS NULL
+           OR notaryId = :viewerNotaryId
+         )
        ORDER BY uploadedAt DESC`,
       {
         ownerId: forcedOwnerId || null,
@@ -3663,6 +3682,8 @@ app.get('/api/owner-documents', requireAuth, (req, res) => {
         inProcess: inProcessFilter,
         notarized: notarizedFilter,
         status: statusFilter,
+        currentRole,
+        viewerNotaryId,
       }
     );
 
@@ -3759,6 +3780,14 @@ app.put('/api/owner-documents/:id/session-started', requireAuth, requireRole(['n
       return res.status(400).json({ error: 'sessionId is required' });
     }
 
+    const existing = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+    if (!existing) {
+      return res.status(404).json({ error: 'Owner document not found' });
+    }
+    if (existing.notaryId && String(existing.notaryId) !== String(req.auth?.userId || '')) {
+      return res.status(409).json({ error: 'This document is locked by another notary' });
+    }
+
     const startAtMs = now();
 
     dbRun(
@@ -3781,8 +3810,8 @@ app.put('/api/owner-documents/:id/session-started', requireAuth, requireRole(['n
         inProcess: 1,
         notarized: 0,
         notaryReview: 'accepted',
-        notaryName: notaryName || 'Unknown Notary',
-        notaryId: notaryUserId || null,
+        notaryName: notaryName || req.auth?.username || 'Unknown Notary',
+        notaryId: existing.notaryId || notaryUserId || req.auth?.userId || null,
         startedAt: startAtMs,
       }
     );
@@ -3932,7 +3961,34 @@ app.put('/api/owner-documents/:id/review', requireAuth, requireRole(['notary']),
       return res.status(400).json({ error: 'Invalid review status' });
     }
 
+    const existing = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+    if (!existing) {
+      return res.status(404).json({ error: 'Owner document not found' });
+    }
+
+    const requesterNotaryId = String(req.auth?.userId || '').trim();
+    const existingNotaryId = String(existing.notaryId || '').trim();
+    const existingStatus = String(existing.status || '').trim().toLowerCase();
+    const existingReview = String(existing.notaryReview || '').trim().toLowerCase();
+
+    if (existingNotaryId && existingNotaryId !== requesterNotaryId) {
+      return res.status(409).json({ error: 'This document is locked by another notary' });
+    }
+
+    const wasAcceptedAlready =
+      existingReview === 'accepted' ||
+      existingStatus === 'accepted' ||
+      existingStatus === 'session_started' ||
+      existingStatus === 'payment_pending' ||
+      existingStatus === 'notarized';
+
+    if (wasAcceptedAlready && notaryReview === 'rejected') {
+      return res.status(409).json({ error: 'Rejected is not allowed after document acceptance' });
+    }
+
     const nowMs = now();
+    const reviewerName = notaryName || req.auth?.username || 'Unknown Notary';
+    const nextNotaryId = notaryReview === 'pending' ? null : (existingNotaryId || requesterNotaryId || null);
     const status =
       notaryReview === 'accepted'
         ? 'accepted'
@@ -3946,6 +4002,7 @@ app.put('/api/owner-documents/:id/review', requireAuth, requireRole(['notary']),
       UPDATE owner_documents
       SET notaryReview = :notaryReview,
           notaryReviewedAt = :notaryReviewedAt,
+          notaryId = :notaryId,
           notaryName = :notaryName,
           scheduledAt = CASE WHEN :status = 'accepted' THEN scheduledAt ELSE NULL END,
           status = :status,
@@ -3957,7 +4014,8 @@ app.put('/api/owner-documents/:id/review', requireAuth, requireRole(['notary']),
       {
         id,
         notaryReview,
-        notaryName: notaryName || 'Unknown Notary',
+        notaryId: nextNotaryId,
+        notaryName: reviewerName,
         notaryReviewedAt: nowMs,
         status,
         inProcess,
@@ -3972,7 +4030,7 @@ app.put('/api/owner-documents/:id/review', requireAuth, requireRole(['notary']),
       return res.status(404).json({ error: 'Owner document not found' });
     }
 
-    console.log(`✅ Owner document ${id} reviewed as ${notaryReview} by ${notaryName}`);
+    console.log(`✅ Owner document ${id} reviewed as ${notaryReview} by ${reviewerName}`);
 
     // Record call initiation when accepted
     if (notaryReview === 'accepted') {
@@ -4011,7 +4069,7 @@ app.put('/api/owner-documents/:id/review', requireAuth, requireRole(['notary']),
       sessionId: document.sessionId,
       ownerId: document.ownerId,
       notaryReview,
-      notaryName,
+      notaryName: reviewerName,
       notaryReviewedAt: document.notaryReviewedAt,
       scheduledAt: document.scheduledAt,
       status: document.status,
@@ -4086,7 +4144,7 @@ app.put('/api/owner-documents/:id/pay', requireAuth, requireRole(['owner']), req
   }
 });
 
-app.put('/api/owner-documents/:id/schedule', (req, res) => {
+app.put('/api/owner-documents/:id/schedule', requireAuth, requireRole(['notary']), requireKbaApproved, (req, res) => {
   try {
     const { id } = req.params;
     const { scheduledAt } = req.body || {};
@@ -4094,6 +4152,9 @@ app.put('/api/owner-documents/:id/schedule', (req, res) => {
     const existing = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
     if (!existing) {
       return res.status(404).json({ error: 'Owner document not found' });
+    }
+    if (existing.notaryId && String(existing.notaryId) !== String(req.auth?.userId || '')) {
+      return res.status(409).json({ error: 'This document is locked by another notary' });
     }
 
     const status = String(existing.status || '').trim().toLowerCase();
@@ -4110,6 +4171,8 @@ app.put('/api/owner-documents/:id/schedule', (req, res) => {
       `
       UPDATE owner_documents
       SET scheduledAt = :scheduledAt,
+          notaryId = :notaryId,
+          notaryName = :notaryName,
           inProcess = 1,
           status = :status,
           notarized = 0,
@@ -4119,6 +4182,8 @@ app.put('/api/owner-documents/:id/schedule', (req, res) => {
       {
         id,
         scheduledAt: scheduledAtMs,
+        notaryId: existing.notaryId || req.auth.userId,
+        notaryName: existing.notaryName || req.auth.username || 'Unknown Notary',
         status: 'accepted',
         notaryReview: existing.notaryReview || 'accepted',
       }
