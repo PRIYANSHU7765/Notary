@@ -15,8 +15,6 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [remoteScreenSharing, setRemoteScreenSharing] = useState(false);
   const [liveMeetingError, setLiveMeetingError] = useState("");
-  const [cameraBoxPosition, setCameraBoxPosition] = useState({ x: 24, y: 120 });
-  const [ownerBoxPosition, setOwnerBoxPosition] = useState({ x: 340, y: 120 });
   const [remoteCameraStreamState, setRemoteCameraStreamState] = useState(null);
   const [remoteScreenStreamState, setRemoteScreenStreamState] = useState(null);
   const [ownerLocalCameraStreamState, setOwnerLocalCameraStreamState] = useState(null);
@@ -46,10 +44,6 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
 
   const cameraBoxRef = useRef(null);
   const ownerBoxRef = useRef(null);
-  const isDraggingCameraRef = useRef(false);
-  const isDraggingOwnerRef = useRef(false);
-  const dragOffsetRef = useRef({ x: 0, y: 0 });
-  const ownerDragOffsetRef = useRef({ x: 0, y: 0 });
 
   const closeNotaryViewerPeer = (viewerSocketId) => {
     const pc = peerConnectionsRef.current.get(viewerSocketId);
@@ -373,7 +367,7 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
         track.onended = handleLiveStreamEnd;
       });
 
-      setCameraBoxPosition({ x: 24, y: 120 });
+      // camera box is fixed layout; no dynamic position updates needed
       setLiveMeetingError("");
       setIsLiveMeeting(true);
 
@@ -399,36 +393,6 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
       setLiveMeetingError("Failed to start live meeting. Please allow camera and microphone permissions.");
     }
   };
-  const handleCameraDragStart = (event) => {
-    if (!cameraBoxRef.current) {
-      return;
-    }
-
-    const boxRect = cameraBoxRef.current.getBoundingClientRect();
-    dragOffsetRef.current = {
-      x: event.clientX - boxRect.left,
-      y: event.clientY - boxRect.top,
-    };
-    isDraggingCameraRef.current = true;
-    isDraggingOwnerRef.current = false;
-    event.preventDefault();
-  };
-
-  const handleOwnerDragStart = (event) => {
-    if (!ownerBoxRef.current) {
-      return;
-    }
-
-    const boxRect = ownerBoxRef.current.getBoundingClientRect();
-    ownerDragOffsetRef.current = {
-      x: event.clientX - boxRect.left,
-      y: event.clientY - boxRect.top,
-    };
-    isDraggingOwnerRef.current = true;
-    isDraggingCameraRef.current = false;
-    event.preventDefault();
-  };
-
   const handleJoinOwnerLiveMeeting = async () => {
     if (!isOwnerRole || !socket || !sessionId || !isRemoteLiveAvailable) {
       return;
@@ -646,59 +610,6 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
     };
   }, [socket, sessionId, isOwnerRole, isNotaryRole, isLiveMeeting]);
 
-  useEffect(() => {
-    const handleMouseMove = (event) => {
-      if (!isNotaryRole && !isOwnerRole) {
-        return;
-      }
-
-      if (isDraggingCameraRef.current && cameraBoxRef.current) {
-        const boxWidth = cameraBoxRef.current.offsetWidth;
-        const boxHeight = cameraBoxRef.current.offsetHeight;
-
-        const unclampedX = event.clientX - dragOffsetRef.current.x;
-        const unclampedY = event.clientY - dragOffsetRef.current.y;
-
-        const maxX = Math.max(0, window.innerWidth - boxWidth);
-        const maxY = Math.max(0, window.innerHeight - boxHeight);
-
-        setCameraBoxPosition({
-          x: Math.max(0, Math.min(unclampedX, maxX)),
-          y: Math.max(0, Math.min(unclampedY, maxY)),
-        });
-        return;
-      }
-
-      if (isDraggingOwnerRef.current && ownerBoxRef.current) {
-        const boxWidth = ownerBoxRef.current.offsetWidth;
-        const boxHeight = ownerBoxRef.current.offsetHeight;
-
-        const unclampedX = event.clientX - ownerDragOffsetRef.current.x;
-        const unclampedY = event.clientY - ownerDragOffsetRef.current.y;
-
-        const maxX = Math.max(0, window.innerWidth - boxWidth);
-        const maxY = Math.max(0, window.innerHeight - boxHeight);
-
-        setOwnerBoxPosition({
-          x: Math.max(0, Math.min(unclampedX, maxX)),
-          y: Math.max(0, Math.min(unclampedY, maxY)),
-        });
-      }
-    };
-
-    const handleMouseUp = () => {
-      isDraggingCameraRef.current = false;
-      isDraggingOwnerRef.current = false;
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -853,22 +764,7 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
           </div>
         )}
 
-        {canHostLiveMeeting && !isLiveMeeting && !isScreenSharing && !remoteScreenSharing ? (
-          <button
-            onClick={startScreenShare}
-            style={{
-              padding: "8px 16px",
-              backgroundColor: "#1976d2",
-              color: "white",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontWeight: "bold",
-            }}
-          >
-            🖥️ Start Screen Share
-          </button>
-        ) : null}
+        {/* Screen share initiation is disabled in both dashboards per request */}
 
         {canHostLiveMeeting && isScreenSharing ? (
           <button
@@ -974,30 +870,27 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
           ref={ownerBoxRef}
           style={{
             position: "fixed",
-            left: `${ownerBoxPosition.x}px`,
-            top: `${ownerBoxPosition.y}px`,
+            right: "24px",
+            top: "370px",
             width: "280px",
             backgroundColor: "#111",
             borderRadius: "6px",
             overflow: "hidden",
             boxShadow: "0 8px 20px rgba(0,0,0,0.35)",
             zIndex: 2500,
-            cursor: "move",
           }}
         >
           <div
-            onMouseDown={handleOwnerDragStart}
             style={{
               color: "#fff",
               padding: "6px 8px",
               fontSize: "12px",
               backgroundColor: "#263238",
-              cursor: "move",
               userSelect: "none",
               fontWeight: "bold",
             }}
           >
-            {isNotaryRole ? "Owner Camera (Drag)" : "Owner Camera (You, Drag)"}
+            {isNotaryRole ? "Owner Camera" : "Owner Camera (You)"}
           </div>
           {(isNotaryRole ? remoteCameraStreamState : ownerLocalCameraStreamState) ? (
             <video
@@ -1020,30 +913,27 @@ const ScreenRecorder = ({ role = null, sessionId = "", socket = null }) => {
           ref={cameraBoxRef}
           style={{
             position: "fixed",
-            left: `${cameraBoxPosition.x}px`,
-            top: `${cameraBoxPosition.y}px`,
+            right: "24px",
+            top: "170px",
             width: "280px",
             backgroundColor: "#111",
             borderRadius: "6px",
             overflow: "hidden",
             boxShadow: "0 8px 20px rgba(0,0,0,0.35)",
             zIndex: 2500,
-            cursor: "move",
           }}
         >
           <div
-            onMouseDown={handleCameraDragStart}
             style={{
               color: "#fff",
               padding: "6px 8px",
               fontSize: "12px",
               backgroundColor: "#263238",
-              cursor: "move",
               userSelect: "none",
               fontWeight: "bold",
             }}
           >
-            {isNotaryRole ? "Notary Camera (You, Drag)" : "Notary Camera (Drag)"}
+            {isNotaryRole ? "Notary Camera (You)" : "Notary Camera"}
           </div>
           {isNotaryRole ? (
             <video
