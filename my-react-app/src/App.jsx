@@ -5,7 +5,6 @@ import OwnerDashboardPage from './pages/OwnerDashboardPage'
 import OwnerDocumentViewPage from './pages/OwnerDocumentViewPage'
 import OwnerSessionPage from './pages/OwnerSessionPage'
 import NotaryPage from './pages/NotaryPage'
-import NotaryDocDashboardPage from './pages/NotaryDocDashboardPage'
 import NotaryDashboardPage from './pages/NotaryDashboardPage'
 import NotaryTransactionsPage from './pages/NotaryTransactionsPage'
 import NotaryToolsPage from './pages/NotaryToolsPage'
@@ -262,15 +261,7 @@ function App() {
           />
           <Route
             path="/notary/doc/dashboard"
-            element={
-              <RequireAuth>
-                <RequireRole allowedRoles={['notary']}>
-                  <RequireKbaApproval>
-                    <NotaryDocDashboardPage />
-                  </RequireKbaApproval>
-                </RequireRole>
-              </RequireAuth>
-            }
+            element={<Navigate to="/notary/meetings" replace />}
           />
           <Route
             path="/notary/dashboard"

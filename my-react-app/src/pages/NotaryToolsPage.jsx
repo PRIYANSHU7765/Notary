@@ -109,8 +109,8 @@ const NotaryToolsPage = () => {
             <div className="notary-card-body">
               <p className="muted">Use additional workflow tools to complete notary operations.</p>
               <div className="inline-actions">
-                <button className="notary-btn" onClick={() => navigate('/notary/doc/dashboard')}>
-                  Open Document Queue
+                <button className="notary-btn" onClick={() => navigate('/notary/meetings')}>
+                  Open Meetings Queue
                 </button>
                 <button className="notary-btn secondary" onClick={() => navigate('/notary')}>
                   Open Live Session Workspace
