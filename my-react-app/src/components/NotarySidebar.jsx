@@ -17,7 +17,6 @@ const NotarySidebar = () => {
   const menuItems = [
     { id: 'home', label: 'Home', path: '/notary/dashboard' },
     { id: 'transactions', label: 'Transactions', path: '/notary/transactions' },
-    { id: 'tools', label: 'Tools', path: '/notary/tools' },
     { id: 'on-demand', label: 'On demand', path: '/notary/on-demand' },
     { id: 'meetings', label: 'Meetings', path: '/notary/meetings' },
     { id: 'settings', label: 'Settings', path: '/notary/settings' },
@@ -35,7 +34,7 @@ const NotarySidebar = () => {
       {/* Header */}
       <div className="sidebar-header">
         <div className="sidebar-brand">
-          <span className="brand-text">Notaries</span>
+          <span className="brand-text">Notarize Pro</span>
         </div>
       </div>
 

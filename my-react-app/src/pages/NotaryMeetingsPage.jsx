@@ -110,18 +110,26 @@ const NotaryMeetingsPage = () => {
               <th>Owner</th>
               <th>Session ID</th>
               <th>Scheduled Time</th>
+              <th>Start Time</th>
+              <th>End Time</th>
               <th>Status</th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td>{row.name || row.documentName || '-'}</td>
-                <td>{row.ownerName || row.ownerId || '-'}</td>
-                <td>{row.sessionId || '-'}</td>
-                <td>{formatDate(row.scheduledAt)}</td>
-                <td>{row.status || row.notaryReview || '-'}</td>
+            {rows.map((row) => {
+              const startTime = row.startedAt || row.scheduledAt || row.startTime || row.startedDate;
+              const endTime = row.endedAt || row.completedAt || row.endTime;
+
+              return (
+                <tr key={row.id}>
+                  <td>{row.name || row.documentName || '-'}</td>
+                  <td>{row.ownerName || row.ownerId || '-'}</td>
+                  <td>{row.sessionId || '-'}</td>
+                  <td>{formatDate(row.scheduledAt)}</td>
+                  <td>{formatDate(startTime)}</td>
+                  <td>{formatDate(endTime)}</td>
+                  <td>{row.status || row.notaryReview || '-'}</td>
                 <td>
                   {type === 'past' && row.sessionId ? (
                     <button
@@ -144,7 +152,8 @@ const NotaryMeetingsPage = () => {
                   )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -171,6 +180,17 @@ const NotaryMeetingsPage = () => {
               <div className="kpi-item">
                 <p className="kpi-label">Past</p>
                 <p className="kpi-value small">{categorized.past.length}</p>
+              </div>
+              <div className="kpi-item">
+                <p className="kpi-label">Quick Actions</p>
+                <div className="inline-actions quick-actions" style={{ justifyContent: 'flex-start', marginTop: 8 }}>
+                  <button className="notary-btn" onClick={() => navigate('/notary/doc/dashboard')}>
+                    Open Document Queue
+                  </button>
+                  <button className="notary-btn secondary" onClick={() => navigate('/notary')}>
+                    Open Live Session Workspace
+                  </button>
+                </div>
               </div>
             </div>
           </div>

@@ -520,6 +520,14 @@ function ensureOwnerDocumentsSchema() {
       console.log('🔧 Adding missing owner_documents.scheduledAt column');
       db.exec("ALTER TABLE owner_documents ADD COLUMN scheduledAt INTEGER;");
     }
+    if (!columns.includes('startedAt')) {
+      console.log('🔧 Adding missing owner_documents.startedAt column');
+      db.exec("ALTER TABLE owner_documents ADD COLUMN startedAt INTEGER;");
+    }
+    if (!columns.includes('endedAt')) {
+      console.log('🔧 Adding missing owner_documents.endedAt column');
+      db.exec("ALTER TABLE owner_documents ADD COLUMN endedAt INTEGER;");
+    }
     if (!columns.includes('sessionAmount')) {
       console.log('🔧 Adding missing owner_documents.sessionAmount column');
       db.exec("ALTER TABLE owner_documents ADD COLUMN sessionAmount REAL NOT NULL DEFAULT 0;");
@@ -605,13 +613,16 @@ function autoStartDueScheduledMeetings() {
     );
 
     dueDocuments.forEach((doc) => {
+      const startedAtMs = now();
+
       dbRun(
         `
         UPDATE owner_documents
         SET status = :status,
             inProcess = :inProcess,
             notarized = :notarized,
-            notaryReview = :notaryReview
+            notaryReview = :notaryReview,
+            startedAt = :startedAt
         WHERE id = :id
       `,
         {
@@ -620,6 +631,7 @@ function autoStartDueScheduledMeetings() {
           inProcess: 1,
           notarized: 0,
           notaryReview: 'accepted',
+          startedAt: startedAtMs,
         }
       );
 
@@ -3747,6 +3759,8 @@ app.put('/api/owner-documents/:id/session-started', requireAuth, requireRole(['n
       return res.status(400).json({ error: 'sessionId is required' });
     }
 
+    const startAtMs = now();
+
     dbRun(
       `
       UPDATE owner_documents
@@ -3756,7 +3770,8 @@ app.put('/api/owner-documents/:id/session-started', requireAuth, requireRole(['n
           notarized = :notarized,
           notaryReview = :notaryReview,
           notaryName = :notaryName,
-          notaryId = :notaryId
+          notaryId = :notaryId,
+          startedAt = :startedAt
       WHERE id = :id
     `,
       {
@@ -3768,6 +3783,7 @@ app.put('/api/owner-documents/:id/session-started', requireAuth, requireRole(['n
         notaryReview: 'accepted',
         notaryName: notaryName || 'Unknown Notary',
         notaryId: notaryUserId || null,
+        startedAt: startAtMs,
       }
     );
     persistDatabase();
@@ -3828,7 +3844,8 @@ app.put('/api/owner-documents/:id/session-ended', requireAuth, requireRole(['not
             notaryReview = :notaryReview,
             notaryReviewedAt = :notaryReviewedAt,
             notaryName = :notaryName,
-            notaryId = :notaryId
+            notaryId = :notaryId,
+            endedAt = :endedAt
         WHERE id = :id
       `,
         {
@@ -3841,6 +3858,7 @@ app.put('/api/owner-documents/:id/session-ended', requireAuth, requireRole(['not
           notaryReviewedAt: nowMs,
           notaryName: notaryName || existing.notaryName || 'Unknown Notary',
           notaryId: notaryUserId || existing.notaryId || null,
+          endedAt: nowMs,
         }
       );
       persistDatabase();
@@ -3857,7 +3875,8 @@ app.put('/api/owner-documents/:id/session-ended', requireAuth, requireRole(['not
             notaryReview = :notaryReview,
             notaryReviewedAt = :notaryReviewedAt,
             notaryName = :notaryName,
-            notaryId = :notaryId
+            notaryId = :notaryId,
+            endedAt = :endedAt
         WHERE id = :id
       `,
         {
@@ -3870,6 +3889,7 @@ app.put('/api/owner-documents/:id/session-ended', requireAuth, requireRole(['not
           notaryReviewedAt: nowMs,
           notaryName: notaryName || existing.notaryName || 'Unknown Notary',
           notaryId: notaryUserId || existing.notaryId || null,
+          endedAt: nowMs,
         }
       );
       persistDatabase();

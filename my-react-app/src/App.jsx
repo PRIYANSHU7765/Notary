@@ -297,18 +297,6 @@ function App() {
             }
           />
           <Route
-            path="/notary/tools"
-            element={
-              <RequireAuth>
-                <RequireRole allowedRoles={['notary']}>
-                  <RequireKbaApproval>
-                    <NotaryToolsPage />
-                  </RequireKbaApproval>
-                </RequireRole>
-              </RequireAuth>
-            }
-          />
-          <Route
             path="/notary/on-demand"
             element={
               <RequireAuth>
