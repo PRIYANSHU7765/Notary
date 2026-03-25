@@ -1,8 +1,24 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import './NotarySidebar.css';
 
-const NotarySidebar = () => {
+const MENU_BY_ROLE = {
+  notary: [
+    { id: 'home', label: 'Home', path: '/notary/dashboard' },
+    { id: 'transactions', label: 'Transactions', path: '/notary/transactions' },
+    { id: 'tools', label: 'Tools', path: '/notary/tools' },
+    { id: 'on-demand', label: 'On demand', path: '/notary/on-demand' },
+    { id: 'meetings', label: 'Meetings', path: '/notary/meetings' },
+    { id: 'settings', label: 'Settings', path: '/notary/settings' },
+  ],
+  owner: [
+    { id: 'home', label: 'Home', path: '/owner/dashboard' },
+    { id: 'transactions', label: 'Transactions', path: '/owner/transactions' },
+    { id: 'meetings', label: 'Meetings', path: '/owner/meetings' },
+  ],
+};
+
+const NotarySidebar = ({ role = 'notary', menuItems }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -14,14 +30,10 @@ const NotarySidebar = () => {
     }
   })();
 
-  const menuItems = [
-    { id: 'home', label: 'Home', path: '/notary/dashboard' },
-    { id: 'transactions', label: 'Transactions', path: '/notary/transactions' },
-    { id: 'tools', label: 'Tools', path: '/notary/tools' },
-    { id: 'on-demand', label: 'On demand', path: '/notary/on-demand' },
-    { id: 'meetings', label: 'Meetings', path: '/notary/meetings' },
-    { id: 'settings', label: 'Settings', path: '/notary/settings' },
-  ];
+  const resolvedRole = role === 'owner' ? 'owner' : 'notary';
+  const resolvedMenuItems = Array.isArray(menuItems) && menuItems.length > 0
+    ? menuItems
+    : MENU_BY_ROLE[resolvedRole];
 
   const handleLogout = () => {
     localStorage.removeItem('notary.authUser');
@@ -32,27 +44,24 @@ const NotarySidebar = () => {
 
   return (
     <div className="notary-sidebar">
-      {/* Header */}
       <div className="sidebar-header">
         <div className="sidebar-brand">
-          <span className="brand-text">Notaries</span>
+          <span className="brand-text">{resolvedRole === 'owner' ? 'Owners' : 'Notaries'}</span>
         </div>
       </div>
 
-      {/* User Profile */}
       {authUser && (
         <div className="sidebar-profile">
           <div className="profile-avatar">{authUser.username?.charAt(0).toUpperCase()}</div>
           <div className="profile-info">
             <p className="profile-name">{authUser.username}</p>
-            <p className="profile-role">Notary</p>
+            <p className="profile-role">{resolvedRole === 'owner' ? 'Owner' : 'Notary'}</p>
           </div>
         </div>
       )}
 
-      {/* Navigation Menu */}
       <nav className="sidebar-menu">
-        {menuItems.map((item) => (
+        {resolvedMenuItems.map((item) => (
           <button
             key={item.id}
             className={`menu-item ${isActive(item.path) ? 'active' : ''}`}
@@ -64,7 +73,6 @@ const NotarySidebar = () => {
         ))}
       </nav>
 
-      {/* Footer Actions */}
       <div className="sidebar-footer">
         <button className="logout-btn" onClick={handleLogout} title="Logout">
           Logout
