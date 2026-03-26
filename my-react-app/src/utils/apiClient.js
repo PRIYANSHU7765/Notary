@@ -778,10 +778,11 @@ async function payOwnerDocumentSession(documentId, paymentPayload = {}) {
 
 async function notarizeOwnerDocument(documentId) {
   try {
-    const url = `/api/signer-documents/${documentId}/signer-notarize`;
+    const url = `/api/signer-documents/${encodeURIComponent(documentId)}/signer-notarize`;
     console.log('[notarizeOwnerDocument] Notarizing:', documentId);
 
-    const response = await fetchWithFallback(url, {
+    // 404 can come from a stale API base in multi-base dev setups; try all candidates first.
+    const response = await fetchWithNotFoundFallback(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -1749,12 +1749,23 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
         return;
       }
 
-      console.log('📋 [SIGNER] Sending document for notary review:', notarizingDoc.id);
+      const latestDocs = await fetchOwnerDocuments({ ownerId: authUser.userId });
+      const targetFromBackend = Array.isArray(latestDocs)
+        ? latestDocs.find((d) => String(d.id) === String(notarizingDoc.id))
+        : null;
 
-      const result = await notarizeOwnerDocument(notarizingDoc.id);
+      if (Array.isArray(latestDocs) && latestDocs.length > 0) {
+        setDocs(latestDocs);
+        saveDocs(latestDocs);
+      }
+
+      const targetDocumentId = targetFromBackend ? targetFromBackend.id : notarizingDoc.id;
+      console.log('📋 [SIGNER] Sending document for notary review:', targetDocumentId);
+
+      const result = await notarizeOwnerDocument(targetDocumentId);
 
       const updatedDoc = {
-        ...notarizingDoc,
+        ...(targetFromBackend || notarizingDoc),
         ...result,
         status: result.status || 'pending_review',
         notaryReview: result.notaryReview || 'pending',
@@ -1762,7 +1773,9 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
       };
 
       const updated = docs.map((d) =>
-        d.id === notarizingDoc.id ? updatedDoc : d
+        String(d.id) === String(targetDocumentId) || String(d.id) === String(notarizingDoc.id)
+          ? updatedDoc
+          : d
       );
       setDocs(updated);
       saveDocs(updated);
@@ -1770,7 +1783,18 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
       setNotarizingDoc(null);
     } catch (error) {
       console.error('❌ [SIGNER] Notarization failed:', error);
-      alert(`Failed to notarize document: ${error.message}`);
+
+      if (String(error?.message || '').includes('HTTP 409')) {
+        const latestDocs = await fetchOwnerDocuments({ ownerId: authUser.userId });
+        if (Array.isArray(latestDocs) && latestDocs.length > 0) {
+          setDocs(latestDocs);
+          saveDocs(latestDocs);
+        }
+        alert('This document is already in progress or finalized. The list has been refreshed. Please notarize only rows with status "Waiting for notary".');
+      } else {
+        alert(`Failed to notarize document: ${error.message}`);
+      }
+
       setNotarizingDoc(null);
     }
   };
