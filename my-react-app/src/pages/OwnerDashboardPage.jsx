@@ -504,8 +504,8 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
   const [isConnected, setIsConnected] = useState(socket.connected);
   const [sessionJoined, setSessionJoined] = useState(Boolean(restoredDashboardState.sessionJoined));
   const [editorElements, setEditorElements] = useState([]);
-  const [uploadedFile, setUploadedFile] = useState(restoredDashboardState.uploadedFile || null);
-  const [uploadedFileName, setUploadedFileName] = useState(restoredDashboardState.uploadedFileName || "");
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [uploadedFileName, setUploadedFileName] = useState("");
   const [uploadedAssets, setUploadedAssets] = useState([]);
   const [uploadedAsset, setUploadedAsset] = useState(null);
   const [adminTerminationNotice, setAdminTerminationNotice] = useState(null);
@@ -572,11 +572,9 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
         activeSessionDocId,
         sessionJoined,
         sessionDocName,
-        uploadedFile,
-        uploadedFileName,
       })
     );
-  }, [activeSessionDocId, sessionJoined, sessionDocName, uploadedFile, uploadedFileName]);
+  }, [activeSessionDocId, sessionJoined, sessionDocName]);
 
   useEffect(() => {
     saveUploadedAssets(activeSessionDocId, uploadedAssets);
