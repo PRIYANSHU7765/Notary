@@ -549,6 +549,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
   const [signatureExtractionMessage, setSignatureExtractionMessage] = useState("");
 
   const lastAutoSharedDocKeyRef = useRef("");
+  const lastJoinEmitRef = useRef({ sessionId: null, socketId: null });
   const currentSessionIdRef = useRef(null);
   const editorScrollRef = useRef(null);
   const pdfScrollRef = useRef(null);
@@ -649,7 +650,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
       if (!docSession || normalizeSessionId(docSession) !== normalizedRequestedSession) return false;
 
       const status = String(doc.status || '').trim().toLowerCase();
-      return status === 'session_started' || status === 'accepted' || status === 'payment_pending';
+      return status === 'session_started';
     });
 
     if (!matchingDoc) return;
@@ -761,6 +762,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
 
       if (isCurrentSession || isCurrentDoc) {
         currentSessionIdRef.current = null;
+        lastJoinEmitRef.current = { sessionId: null, socketId: null };
         setActiveSessionDocId(null);
         setNotaries([]);
         setSessionDocName("");
@@ -774,27 +776,31 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
       }
 
       setActiveSessions((prev) => {
+        let changed = false;
         const updated = { ...prev };
         Object.keys(updated).forEach((docId) => {
           if (updated[docId] === endedSessionId || docId === endedDocumentId) {
             delete updated[docId];
+            changed = true;
           }
         });
         console.log('✅ [SIGNER] Updated activeSessions after session end:', updated);
-        return updated;
+        return changed ? updated : prev;
       });
     };
 
     const onOwnerLeftSession = (data) => {
       console.log('ℹ️ Signer left session:', data.sessionId);
       setActiveSessions((prev) => {
+        let changed = false;
         const updated = { ...prev };
         Object.keys(updated).forEach((docId) => {
           if (updated[docId] === data.sessionId) {
             delete updated[docId];
+            changed = true;
           }
         });
-        return updated;
+        return changed ? updated : prev;
       });
     };
 
@@ -826,6 +832,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
       }
 
       setActiveSessions((prev) => {
+        let changed = false;
         const updated = { ...prev };
         Object.keys(updated).forEach((docId) => {
           if (
@@ -833,9 +840,10 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
             (terminatedDocumentId && docId === terminatedDocumentId)
           ) {
             delete updated[docId];
+            changed = true;
           }
         });
-        return updated;
+        return changed ? updated : prev;
       });
 
       const isCurrentSession = terminatedSessionId && currentSessionIdRef.current === terminatedSessionId;
@@ -843,6 +851,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
 
       if (isCurrentSession || isCurrentDoc) {
         currentSessionIdRef.current = null;
+        lastJoinEmitRef.current = { sessionId: null, socketId: null };
         setActiveSessionDocId(null);
         setNotaries([]);
         setSessionDocName('');
@@ -1048,6 +1057,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
     if (!activeDoc || activeStatus === 'session_started' || activeStatus === 'notarized') return;
 
     currentSessionIdRef.current = null;
+    lastJoinEmitRef.current = { sessionId: null, socketId: null };
     setSessionJoined(false);
     setActiveSessionDocId(null);
     setNotaries([]);
@@ -1070,6 +1080,9 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
     if (!activeSessionDocId || !sessionJoined) return;
 
     const activeDoc = docs.find((doc) => doc.id === activeSessionDocId);
+    const activeStatus = String(activeDoc?.status || '').trim().toLowerCase();
+    if (activeStatus !== 'session_started') return;
+
     const sessionIdFromUrl = new URLSearchParams(window.location.search).get("sessionId");
     const sessionIdToJoin =
       resolveDocSessionId(activeDoc, activeSessions, previousSessions) ||
@@ -1175,6 +1188,14 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
     socket.on("authError", onAuthError);
 
     const emitJoinSession = () => {
+      const currentSocketId = socket.id || null;
+      if (
+        lastJoinEmitRef.current.sessionId === sessionIdToJoin &&
+        lastJoinEmitRef.current.socketId === currentSocketId
+      ) {
+        return;
+      }
+
       socket.emit("joinSession", {
         roomId: sessionIdToJoin,
         role: "signer",
@@ -1182,6 +1203,11 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
         username: authUser?.username || "Signer",
         token: authUser?.token,
       });
+
+      lastJoinEmitRef.current = {
+        sessionId: sessionIdToJoin,
+        socketId: currentSocketId,
+      };
     };
 
     const onConnectRejoin = () => emitJoinSession();
@@ -1371,6 +1397,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
       console.log("Emitted ownerLeftSession:", sessionIdToLeave);
     }
     currentSessionIdRef.current = null;
+    lastJoinEmitRef.current = { sessionId: null, socketId: null };
 
     setActiveSessionDocId(null);
     setNotaries([]);
