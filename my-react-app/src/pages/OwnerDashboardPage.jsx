@@ -551,6 +551,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
   const lastAutoSharedDocKeyRef = useRef("");
   const lastJoinEmitRef = useRef({ sessionId: null, socketId: null });
   const currentSessionIdRef = useRef(null);
+  const joinedSessionKeyRef = useRef("");
   const editorScrollRef = useRef(null);
   const pdfScrollRef = useRef(null);
   const scrollEmitTimerRef = useRef(null);
@@ -561,18 +562,17 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const urlSessionId = params.get("sessionId");
-    let id = urlSessionId || localStorage.getItem("notary.signerSessionId") || "";
-    
-    // If no sessionId exists, generate one and navigate
-    if (!id) {
-      id = `notary-session-${Date.now()}`;
-      navigate(`/signer/doc/dashboard?sessionId=${encodeURIComponent(id)}`, { replace: true });
-    }
-    
+    const urlSessionId = normalizeSessionId(params.get("sessionId"));
+    const storedSessionId = normalizeSessionId(localStorage.getItem("notary.signerSessionId") || "");
+    const id = urlSessionId || storedSessionId || "";
+
     setSessionId(id);
-    localStorage.setItem("notary.signerSessionId", id);
-  }, [navigate]);
+    if (id) {
+      localStorage.setItem("notary.signerSessionId", id);
+    } else {
+      localStorage.removeItem("notary.signerSessionId");
+    }
+  }, []);
 
   // Sync sidebar visibility with session state (on mount and refresh)
   useEffect(() => {
@@ -639,7 +639,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
   }, [activeSessionDocId, docs, uploadedFile, sessionDocName]);
 
   useEffect(() => {
-    if (sessionJoined || activeSessionDocId || !sessionId) return;
+    if ((sessionJoined && activeSessionDocId) || !sessionId) return;
     if (!Array.isArray(docs) || docs.length === 0) return;
 
     const normalizedRequestedSession = normalizeSessionId(sessionId);
@@ -696,12 +696,19 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
         console.warn('⚠️ Invalid notarySessionStarted data:', data);
         return;
       }
+
+      const normalizedStartedSessionId = normalizeSessionId(data.sessionId);
+      setSessionId(normalizedStartedSessionId);
+      localStorage.setItem("notary.signerSessionId", normalizedStartedSessionId);
+      const params = new URLSearchParams(window.location.search);
+      params.set("sessionId", normalizedStartedSessionId);
+      window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
       
       // Store the active session - this is the key that unlocks Join button
       setActiveSessions((prev) => {
         const updated = {
           ...prev,
-          [data.documentId]: data.sessionId,
+          [data.documentId]: normalizedStartedSessionId,
         };
         console.log('✅ [SIGNER] Updated activeSessions from notarySessionStarted:', updated);
         return updated;
@@ -727,7 +734,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
       // Emit acknowledgment back so notary knows signer is aware
       socket.emit('ownerAckSessionStart', { 
         documentId: data.documentId,
-        sessionId: data.sessionId,
+        sessionId: normalizedStartedSessionId,
         timestamp: new Date().toISOString()
       });
     };
@@ -1097,6 +1104,9 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
 
     // Store the current session ID for later use in handleExitSession
     currentSessionIdRef.current = sessionIdToJoin;
+    if (!joinedSessionKeyRef.current.startsWith(`${sessionIdToJoin}:`)) {
+      joinedSessionKeyRef.current = "";
+    }
 
     const authUser = (() => {
       try {
@@ -1188,14 +1198,19 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
     socket.on("authError", onAuthError);
 
     const emitJoinSession = () => {
-      const currentSocketId = socket.id || null;
-      if (
-        lastJoinEmitRef.current.sessionId === sessionIdToJoin &&
-        lastJoinEmitRef.current.socketId === currentSocketId
-      ) {
+
+      if (!socket.connected || !socket.id) {
         return;
       }
 
+      const currentSocketId = socket.id;
+
+      const joinKey = `${sessionIdToJoin}:${socket.id}`;
+      if (joinedSessionKeyRef.current === joinKey) {
+        return;
+      }
+
+      joinedSessionKeyRef.current = joinKey;
       socket.emit("joinSession", {
         roomId: sessionIdToJoin,
         role: "signer",
@@ -1211,7 +1226,11 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
     };
 
     const onConnectRejoin = () => emitJoinSession();
+    const onDisconnectResetJoin = () => {
+      joinedSessionKeyRef.current = "";
+    };
     socket.on("connect", onConnectRejoin);
+    socket.on("disconnect", onDisconnectResetJoin);
     emitJoinSession();
 
     return () => {
@@ -1223,6 +1242,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
       socket.off("documentScrolled", onDocumentScrolled);
       socket.off("authError", onAuthError);
       socket.off("connect", onConnectRejoin);
+      socket.off("disconnect", onDisconnectResetJoin);
     };
   }, [activeSessionDocId, activeSessions, previousSessions, docs, sessionJoined]);
 
