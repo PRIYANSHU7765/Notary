@@ -4601,6 +4601,26 @@ io.on('connection', (socket) => {
     }
 
     const session = sessions.get(roomId);
+    const existingUser = session.users.find((u) => u.socketId === socket.id);
+    if (
+      existingUser &&
+      existingUser.role === role &&
+      String(existingUser.userId || '') === String(userId || '')
+    ) {
+      const hasOwner = session.users.some((u) => u.role === 'signer');
+      const hasNotary = session.users.some((u) => u.role === 'notary');
+      socket.emit('sessionStatus', {
+        sessionId: roomId,
+        currentUser: { role, userId },
+        ownerConnected: hasOwner,
+        notaryConnected: hasNotary,
+        liveMeetingActive: Boolean(liveMeetings.get(roomId)?.active),
+        totalUsers: session.users.length,
+        allUsers: session.users,
+      });
+      return;
+    }
+
     session.users = session.users.filter((u) => u.socketId !== socket.id);
     session.users.push({ socketId: socket.id, role, userId, username });
 

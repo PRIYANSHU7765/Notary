@@ -32,21 +32,10 @@ const resolveReachableBaseUrl = (value) => {
 
 const configuredReachableApiBaseUrl = resolveReachableBaseUrl(configuredApiBaseUrl);
 
-const deriveDevTunnelApiFromWindowOrigin = () => {
-  if (!isBrowser) return '';
-  const apiPort = String(import.meta.env.VITE_API_PORT || '5001').trim();
-  const origin = window.location.origin;
-  // Example: https://abc-5173.euw.devtunnels.ms -> https://abc-5000.euw.devtunnels.ms
-  return origin.replace(/-(\d+)(\.[^.]+\.devtunnels\.ms)$/i, `-${apiPort}$2`);
-};
-
-const devTunnelDerivedApi = deriveDevTunnelApiFromWindowOrigin();
-
 const API_BASE_CANDIDATES = [
   ...(isDev && isLocalPageHost ? DEV_LOCAL_API_BASES : []),
   configuredReachableApiBaseUrl,
   (isBrowser ? window.location.origin : ''),
-  devTunnelDerivedApi,
 ].filter((v) => typeof v === 'string' && v.trim() !== '');
 
 // Deduplicate while preserving order

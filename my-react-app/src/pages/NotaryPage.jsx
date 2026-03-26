@@ -52,6 +52,15 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   const [elements, setElements] = useState([]);
   const [sessionId, setSessionId] = useState(passedSessionId || null);
   const [documentId, setDocumentId] = useState(null);
+
+  // Keep refs in sync with state so listeners can access current values without re-registering
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  useEffect(() => {
+    documentIdRef.current = documentId;
+  }, [documentId]);
   const [connectedUsers, setConnectedUsers] = useState([]);
   const [documentInfo, setDocumentInfo] = useState(null);
   const [isConnected, setIsConnected] = useState(socket.connected);
@@ -72,6 +81,10 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
   const scrollEmitTimerRef = useRef(null);
   const isApplyingScrollRef = useRef(false);
   const fileInputRef = useRef(null);
+  const hasJoinedSessionRef = useRef(false);
+  const previousSessionIdRef = useRef(null);
+  const sessionIdRef = useRef(null);
+  const documentIdRef = useRef(null);
   const navigate = useNavigate();
 
   const showToast = (message, type = "info", duration = 2600) => {
@@ -132,6 +145,21 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       socket.off("disconnect", onDisconnect);
     };
   }, []);
+
+  // Reset join ref when leaving session
+  useEffect(() => {
+    if (!sessionJoined) {
+      hasJoinedSessionRef.current = false;
+    }
+  }, [sessionJoined]);
+
+  useEffect(() => {
+    const prev = previousSessionIdRef.current;
+    if (prev && sessionId && prev !== sessionId) {
+      hasJoinedSessionRef.current = false;
+    }
+    previousSessionIdRef.current = sessionId;
+  }, [sessionId]);
 
   useEffect(() => {
     if (sessionJoined && sessionId) {
@@ -218,7 +246,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
 
       const onOwnerLeftSession = (data) => {
         console.log("👤 [NOTARY] Signer left session:", data.sessionId);
-        if (data.sessionId === sessionId) {
+        if (data.sessionId === sessionIdRef.current) {
           setSessionJoined(false);
           setSessionId(null);
           setInputSessionId("");
@@ -233,7 +261,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       };
 
       const onAdminSessionTerminated = (data) => {
-        if (!data?.sessionId || data.sessionId !== sessionId) return;
+        if (!data?.sessionId || data.sessionId !== sessionIdRef.current) return;
 
         showToast(data.message || "Admin terminated this session", "error", 4600);
 
@@ -262,7 +290,7 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       };
 
       const onNotarySessionStartRejected = (payload) => {
-        if (!payload?.sessionId || payload.sessionId !== sessionId) return;
+        if (!payload?.sessionId || payload.sessionId !== sessionIdRef.current) return;
 
         showToast(payload.message || 'Notary session start rejected because session is terminated.', 'error', 5200);
 
@@ -292,8 +320,8 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
 
       const onDocumentPaymentRequested = (data) => {
         if (!data) return;
-        const matchesDocument = data.documentId && documentId && String(data.documentId) === String(documentId);
-        const matchesSession = data.sessionId && data.sessionId === sessionId;
+        const matchesDocument = data.documentId && documentIdRef.current && String(data.documentId) === String(documentIdRef.current);
+        const matchesSession = data.sessionId && data.sessionId === sessionIdRef.current;
         if (!matchesDocument && !matchesSession) return;
 
         const requestedAmount = Number(data.sessionAmount || 0);
@@ -316,8 +344,8 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       socket.on("notarySessionStartRejected", onNotarySessionStartRejected);
       const onOwnerPaymentCompleted = (data) => {
         if (!data) return;
-        const matchesDocument = data.documentId && documentId && String(data.documentId) === String(documentId);
-        const matchesSession = data.sessionId && data.sessionId === sessionId;
+        const matchesDocument = data.documentId && documentIdRef.current && String(data.documentId) === String(documentIdRef.current);
+        const matchesSession = data.sessionId && data.sessionId === sessionIdRef.current;
         if (!matchesDocument && !matchesSession) return;
         const paidAmount = Number(data.amountPaid || 0);
         setPaymentState('paid');
@@ -329,6 +357,14 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       socket.on('ownerPaymentCompleted', onOwnerPaymentCompleted);
 
       const emitJoinSession = () => {
+        if (!socket.connected || !socket.id) {
+          return;
+        }
+        if (hasJoinedSessionRef.current) {
+          console.log('📡 [NOTARY] Already joined, skipping duplicate join');
+          return;
+        }
+        hasJoinedSessionRef.current = true;
         console.log('📡 [NOTARY] Joining session:', { roomId: sessionId, role: 'notary', userId: authUser.userId });
         socket.emit("joinSession", {
           roomId: sessionId,
@@ -340,7 +376,11 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       };
 
       const onConnectRejoin = () => emitJoinSession();
+      const onDisconnectResetJoin = () => {
+        hasJoinedSessionRef.current = false;
+      };
       socket.on("connect", onConnectRejoin);
+      socket.on("disconnect", onDisconnectResetJoin);
       emitJoinSession();
 
       // Check if this is a fresh session start (sessionStarted=true in URL)
@@ -352,26 +392,35 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
       if (wasJustStarted) {
         console.log('🔔 [NOTARY] Fresh session start detected - will emit notarySessionStarted');
 
-        if (documentId) {
-          markOwnerDocumentSessionStarted(
-            documentId,
-            sessionId,
-            authUser.username || 'Notary',
-            authUser.userId
-          ).catch((error) => {
-            console.warn('⚠️ [NOTARY] Failed to persist session_started via API:', error?.message || error);
-          });
-        } else {
-          console.warn('⚠️ [NOTARY] Missing documentId in URL; cannot persist session_started state');
-        }
+        const ensureStartedDocumentId = async () => {
+          if (documentIdRef.current) return documentIdRef.current;
+          const resolved = await resolveSessionDocumentId();
+          return resolved || null;
+        };
         
         // Emit immediately if socket is connected, otherwise wait with retry
-        const attemptEmit = (attempt = 0) => {
+        const attemptEmit = async (attempt = 0) => {
           if (socket.connected) {
+            const startedDocumentId = await ensureStartedDocumentId();
+            if (!startedDocumentId) {
+              console.warn('⚠️ [NOTARY] Unable to emit notarySessionStarted: missing documentId');
+              showToast('Unable to start session: document is missing. Please refresh meetings and try again.', 'error', 4200);
+              return;
+            }
+
+            markOwnerDocumentSessionStarted(
+              startedDocumentId,
+              sessionIdRef.current,
+              authUser.username || 'Notary',
+              authUser.userId
+            ).catch((error) => {
+              console.warn('⚠️ [NOTARY] Failed to persist session_started via API:', error?.message || error);
+            });
+
             console.log('🔔 [NOTARY] Socket connected - Emitting notarySessionStarted');
             socket.emit('notarySessionStarted', {
-              documentId: documentId,
-              sessionId: sessionId,
+              documentId: startedDocumentId,
+              sessionId: sessionIdRef.current,
               notaryName: authUser.username || 'Notary',
               notaryUserId: authUser.userId,
               timestamp: new Date().toISOString(),
@@ -384,13 +433,19 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
           } else if (attempt < 5) {
             // Retry up to 5 times (500ms total wait)
             console.log(`⏳ [NOTARY] Socket not ready yet, retrying... (attempt ${attempt + 1}/5)`);
-            setTimeout(() => attemptEmit(attempt + 1), 100);
+            setTimeout(() => {
+              attemptEmit(attempt + 1).catch((error) => {
+                console.warn('⚠️ [NOTARY] Failed to retry session start emit:', error?.message || error);
+              });
+            }, 100);
           } else {
             console.warn('❌ [NOTARY] Failed to emit notarySessionStarted - socket not connected after retries');
           }
         };
         
-        attemptEmit();
+        attemptEmit().catch((error) => {
+          console.warn('⚠️ [NOTARY] Failed to emit notarySessionStarted:', error?.message || error);
+        });
       }
 
       return () => {
@@ -408,9 +463,10 @@ const NotaryPage = ({ sessionId: passedSessionId }) => {
         socket.off("documentPaymentRequested", onDocumentPaymentRequested);
         socket.off('ownerPaymentCompleted', onOwnerPaymentCompleted);
         socket.off("connect", onConnectRejoin);
+        socket.off("disconnect", onDisconnectResetJoin);
       };
     }
-  }, [sessionJoined, sessionId, documentId, navigate]);
+  }, [sessionJoined, sessionId, navigate]);
 
   useEffect(() => {
     if (!sessionJoined || !sessionId) return;

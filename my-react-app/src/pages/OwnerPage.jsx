@@ -90,6 +90,8 @@ const OwnerPage = () => {
   const [isPaying, setIsPaying] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [lastPaidAmount, setLastPaidAmount] = useState(0);
+  const hasJoinedSessionRef = useRef(false);
+  const sessionIdRef = useRef(null);
 
   const authUser = (() => {
     try {
@@ -99,99 +101,128 @@ const OwnerPage = () => {
     }
   })();
 
+  // Keep sessionId ref in sync with state
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+
   // Track backend connection status
   useEffect(() => {
     const onConnect = () => setIsConnected(true);
     const onDisconnect = () => setIsConnected(false);
+    
+    const onAuthError = (data) => {
+      console.error('❌ [SIGNER] Auth error:', data?.message);
+      alert(`Authentication error: ${data?.message || 'Please login again'}`);
+      navigate("/auth", { replace: true });
+    };
+    
+    const onSessionTerminated = (data) => {
+      console.warn('⚠️ [SIGNER] Session terminated:', data?.message);
+      alert(data?.message || 'This session has been terminated.');
+      navigate("/signer/doc/dashboard", { replace: true });
+    };
+    
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
+    socket.on("authError", onAuthError);
+    socket.on("sessionTerminated", onSessionTerminated);
+    
     return () => {
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
+      socket.off("authError", onAuthError);
+      socket.off("sessionTerminated", onSessionTerminated);
     };
-  }, []);
+  }, [navigate]);
 
+  // Initialize session ID from URL or storage once on mount
   useEffect(() => {
-    console.log('📡 [SIGNER] Setting up socket listeners');
-    // Reuse existing session on refresh when possible.
     const params = new URLSearchParams(window.location.search);
     const roomIdFromUrl = params.get("sessionId");
     const roomIdFromStorage = localStorage.getItem("notary.signerSessionId");
-    const roomId = roomIdFromUrl || roomIdFromStorage || `notary-session-${Date.now()}`;
+    const resolvedRoomId = roomIdFromUrl || roomIdFromStorage;
 
-    setSessionId(roomId);
-    localStorage.setItem("notary.signerSessionId", roomId);
-    localStorage.setItem("notary.lastSessionId", roomId);
+    if (resolvedRoomId) {
+      setSessionId(resolvedRoomId);
+      localStorage.setItem("notary.signerSessionId", resolvedRoomId);
+      localStorage.setItem("notary.lastSessionId", resolvedRoomId);
+    }
+  }, []);
 
+  // Main socket setup: register listeners and join session
+  useEffect(() => {
+    if (!sessionId) {
+      console.log('📡 [SIGNER] No sessionId, waiting for proper session');
+      return;
+    }
+
+    if (hasJoinedSessionRef.current) {
+      console.log('📡 [SIGNER] Already joined, skipping duplicate join');
+      return;
+    }
+
+    console.log('📡 [SIGNER] Setting up socket listeners for session:', sessionId);
+    const params = new URLSearchParams(window.location.search);
     params.set("role", "signer");
-    params.set("sessionId", roomId);
+    params.set("sessionId", sessionId);
     window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
 
-    const authUser = (() => {
-      try {
-        return JSON.parse(localStorage.getItem('notary.authUser') || 'null') || {};
-      } catch {
-        return {};
-      }
-    })();
-
-    console.log('📡 [SIGNER] Joining session:', {roomId, role: 'signer', userId: authUser.userId});
+    hasJoinedSessionRef.current = true;
+    console.log('📡 [SIGNER] Joining session:', { roomId: sessionId, role: 'signer', userId: authUser.userId });
     socket.emit("joinSession", {
-      roomId,
+      roomId: sessionId,
       role: "signer",
       userId: authUser.userId || socket.id,
       username: authUser.username || "Signer",
       token: authUser.token,
     });
 
-    // Listen for element updates from notary
-    socket.on("elementAdded", (element) => {
+    // Register all socket listeners - these will be attached once per session
+    const onElementAdded = (element) => {
       console.log("✏️ [SIGNER] Notary added element:", element);
       setElements((prev) => [...prev, element]);
-    });
+    };
 
-    socket.on("elementUpdated", (updatedElement) => {
+    const onElementUpdated = (updatedElement) => {
       console.log("🔄 [SIGNER] Notary updated element:", updatedElement.id);
       setElements((prev) =>
         prev.map((el) => (el.id === updatedElement.id ? updatedElement : el))
       );
-    });
+    };
 
-    socket.on("elementRemoved", (elementId) => {
+    const onElementRemoved = (elementId) => {
       console.log("🗑️ [SIGNER] Notary removed element:", elementId);
       setElements((prev) => prev.filter((el) => el.id !== elementId));
-    });
+    };
 
-    socket.on("usersConnected", (users) => {
+    const onUsersConnected = (users) => {
       console.log("👥 [SIGNER] Users connected:", users);
       setConnectedUsers(users);
-      // Check if notary is in the connected users
       const notary = users.find(u => u.role === 'notary');
       setNotaryConnected(!!notary);
-    });
+    };
 
-    socket.on("sessionStatus", (status) => {
+    const onSessionStatus = (status) => {
       console.log("📊 [SIGNER] Session status:", status);
       setSessionStatus(status);
       setNotaryConnected(status.notaryConnected);
-    });
+    };
 
-    socket.on("documentShared", (data) => {
+    const onDocumentShared = (data) => {
       console.log("📄 [SIGNER] Document shared by notary:", data.fileName);
       setUploadedFile(data.pdfDataUrl);
       setUploadedFileName(data.fileName || "document.pdf");
-    });
+    };
 
-    socket.on("documentScrolled", (data) => {
+    const onDocumentScrolled = (data) => {
       console.log('[SIGNER SCROLL] Received documentScrolled event:', JSON.stringify(data));
       const scrollTarget = editorScrollRef.current || pdfScrollRef.current;
       if (!scrollTarget) {
         console.warn('[SIGNER SCROLL] ❌ No scroll target found');
-        console.warn('[SIGNER SCROLL] editorScrollRef?.current:', editorScrollRef.current);
-        console.warn('[SIGNER SCROLL] pdfScrollRef?.current:', pdfScrollRef.current);
         return;
       }
-      console.log('[SIGNER SCROLL] ✅ Found scroll target, scrollHeight:', scrollTarget.scrollHeight, 'clientHeight:', scrollTarget.clientHeight);
+      console.log('[SIGNER SCROLL] ✅ Found scroll target, applying scroll');
       
       if (data?.scrollRatio === undefined && data?.scrollPosition === undefined) {
         console.warn('[SIGNER SCROLL] No scroll metrics in data');
@@ -203,33 +234,32 @@ const OwnerPage = () => {
         ? maxScrollable * Number(data.scrollRatio)
         : Number(data.scrollPosition);
       const finalScrollTop = Number.isFinite(nextScrollTop) ? nextScrollTop : 0;
-      console.log('[SIGNER SCROLL] ✅ Applying scroll - container scrollHeight:', scrollTarget.scrollHeight, 'setting scrollTop to:', finalScrollTop, 'from scrollRatio:', data?.scrollRatio);
       scrollTarget.scrollTop = finalScrollTop;
-    });
+    };
 
-    socket.on("adminSessionTerminated", (data) => {
-      if (!data?.sessionId || data.sessionId !== roomId) return;
+    const onAdminSessionTerminated = (data) => {
+      if (!data?.sessionId || data.sessionId !== sessionIdRef.current) return;
       alert(data?.message || "Admin terminated this session.");
       navigate("/signer/doc/dashboard", { replace: true });
-    });
+    };
 
-    socket.on("documentPaymentRequested", (data) => {
-      if (!data || data.sessionId !== roomId) return;
+    const onDocumentPaymentRequested = (data) => {
+      if (!data || data.sessionId !== sessionIdRef.current) return;
       const amount = Number(data.sessionAmount || 0);
       setActiveDocumentId(String(data.documentId || ""));
       setPaymentRequest({
         documentId: String(data.documentId || ""),
-        sessionId: String(data.sessionId || roomId),
+        sessionId: String(data.sessionId || sessionIdRef.current),
         amount: Number.isFinite(amount) ? amount : 0,
         notaryName: String(data.notaryName || "Notary"),
       });
       setPaymentStatus("requested");
       setPaymentError("");
       setLastPaidAmount(0);
-    });
+    };
 
-    socket.on("ownerPaymentCompleted", (data) => {
-      if (!data || data.sessionId !== roomId) return;
+    const onOwnerPaymentCompleted = (data) => {
+      if (!data || data.sessionId !== sessionIdRef.current) return;
       const amount = Number(data.amountPaid || 0);
       setPaymentStatus("paid");
       setPaymentRequest((prev) =>
@@ -242,22 +272,85 @@ const OwnerPage = () => {
       );
       setLastPaidAmount(Number.isFinite(amount) ? amount : 0);
       setPaymentError("");
-    });
+    };
+
+    // Attach all listeners
+    socket.on("elementAdded", onElementAdded);
+    socket.on("elementUpdated", onElementUpdated);
+    socket.on("elementRemoved", onElementRemoved);
+    socket.on("usersConnected", onUsersConnected);
+    socket.on("sessionStatus", onSessionStatus);
+    socket.on("documentShared", onDocumentShared);
+    socket.on("documentScrolled", onDocumentScrolled);
+    socket.on("adminSessionTerminated", onAdminSessionTerminated);
+    socket.on("documentPaymentRequested", onDocumentPaymentRequested);
+    socket.on("ownerPaymentCompleted", onOwnerPaymentCompleted);
 
     return () => {
-      socket.off("elementAdded");
-      socket.off("elementUpdated");
-      socket.off("elementRemoved");
-      socket.off("usersConnected");
-      socket.off("documentShared");
-      socket.off("sessionStatus");
-      socket.off("documentScrolled");
-      socket.off("adminSessionTerminated");
-      socket.off("documentPaymentRequested");
-      socket.off("ownerPaymentCompleted");
+      socket.off("elementAdded", onElementAdded);
+      socket.off("elementUpdated", onElementUpdated);
+      socket.off("elementRemoved", onElementRemoved);
+      socket.off("usersConnected", onUsersConnected);
+      socket.off("sessionStatus", onSessionStatus);
+      socket.off("documentShared", onDocumentShared);
+      socket.off("documentScrolled", onDocumentScrolled);
+      socket.off("adminSessionTerminated", onAdminSessionTerminated);
+      socket.off("documentPaymentRequested", onDocumentPaymentRequested);
+      socket.off("ownerPaymentCompleted", onOwnerPaymentCompleted);
+    };
+  }, [sessionId, navigate]);
+
+  // Load signer elements from localStorage when sessionId is available
+  useEffect(() => {
+    if (sessionId) {
+      const savedElements = loadOwnerElements(sessionId);
+      setElements(savedElements);
+    } else {
+      // Reset join flag when leaving session
+      hasJoinedSessionRef.current = false;
+    }
+  }, [sessionId]);
+
+  // Cleanup: Notify when signer leaves the session
+  useEffect(() => {
+    return () => {
+      if (sessionIdRef.current) {
+        socket.emit("ownerLeftSession", { sessionId: sessionIdRef.current });
+        localStorage.removeItem("notary.signerSessionId");
+        hasJoinedSessionRef.current = false;
+      }
     };
   }, []);
 
+  // Handle socket reconnection: automatically rejoin the session room
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const handleReconnect = () => {
+      console.log('📡 [SIGNER] Socket reconnected, checking session status:', sessionIdRef.current);
+      
+      // If we were supposed to be in a session, rejoin
+      if (sessionIdRef.current && !hasJoinedSessionRef.current) {
+        hasJoinedSessionRef.current = true;
+        console.log('📡 [SIGNER] Auto-rejoining session after reconnect:', sessionIdRef.current);
+        socket.emit("joinSession", {
+          roomId: sessionIdRef.current,
+          role: "signer",
+          userId: authUser.userId || socket.id,
+          username: authUser.username || "Signer",
+          token: authUser.token,
+        });
+      }
+    };
+
+    socket.on('connect', handleReconnect);
+
+    return () => {
+      socket.off('connect', handleReconnect);
+    };
+  }, [sessionId]);
+
+  // Hydrate payment request state from server on session join
   useEffect(() => {
     if (!sessionId) return;
 
@@ -306,24 +399,6 @@ const OwnerPage = () => {
     hydratePaymentRequest();
     return () => {
       disposed = true;
-    };
-  }, [sessionId]);
-
-  // Load signer elements from localStorage when sessionId is available
-  useEffect(() => {
-    if (sessionId) {
-      const savedElements = loadOwnerElements(sessionId);
-      setElements(savedElements);
-    }
-  }, [sessionId]);
-
-  // Cleanup: Notify when signer leaves the session
-  useEffect(() => {
-    return () => {
-      if (sessionId) {
-        socket.emit("ownerLeftSession", { sessionId });
-        localStorage.removeItem("notary.signerSessionId");
-      }
     };
   }, [sessionId]);
 

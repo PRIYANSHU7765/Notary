@@ -26,11 +26,6 @@ const getStoredAuthToken = () => {
   }
 };
 
-const deriveDevTunnelSocketUrl = (origin, fallbackPort = '5001') => {
-  // Example: https://abc-5173.euw.devtunnels.ms -> https://abc-5000.euw.devtunnels.ms
-  return String(origin || '').replace(/-(\d+)(\.[^.]+\.devtunnels\.ms)$/i, `-${fallbackPort}$2`);
-};
-
 // Detect socket server URL based on current host and env variables
 const getSocketUrl = () => {
   const env =
@@ -40,36 +35,34 @@ const getSocketUrl = () => {
     import.meta.env.VITE_REACT_APP_SERVER_URL;
 
   const isLocalhost = isLocalPageHost();
-  const derivedTunnelUrl = deriveDevTunnelSocketUrl(window.location.origin, import.meta.env.VITE_SOCKET_PORT || '5001');
-
   const localSocketCandidates = ['http://localhost:5001', 'http://localhost:5000', 'http://localhost:5002'];
 
-  const fallbackUrls = [
-    ...(isLocalhost ? localSocketCandidates : []),
-    env,
-    derivedTunnelUrl,
-    window.location.origin,
-    ...(!isLocalhost ? localSocketCandidates : []),
-  ].filter((url) => !!url);
-
-  if (fallbackUrls.length === 0) {
-    console.warn('[Socket] No socket URL candidate found; defaulting to window.origin');
-    return window.location.origin;
-  }
-
+  // On localhost, prefer env-configured URLs or fallback to local candidates
   if (isLocalhost) {
     const normalizedEnv = String(env || '').trim().toLowerCase();
     const envIsLocal = localSocketCandidates.some((candidate) => candidate.toLowerCase() === normalizedEnv);
-    return envIsLocal ? env : localSocketCandidates[0];
+    const candidate = envIsLocal ? env : localSocketCandidates[0];
+    console.log('[Socket] Localhost detected, using:', candidate);
+    return candidate;
   }
 
-  // On devtunnel/public URLs, localhost env values point to the viewer's own machine.
+  // On devtunnel/public hosts:
+  // - Ignore localhost env values (they point to visitor's own machine, not the server)
+  // - Use window.origin (same origin as page, proxied through Vite or reverse proxy)
   if (isLoopbackUrl(env)) {
-    console.warn('[Socket] Ignoring localhost socket env for non-local host; using window.origin instead');
-    return derivedTunnelUrl || window.location.origin;
+    console.warn('[Socket] Ignoring localhost socket env for remote host; using window.origin instead');
+    return window.location.origin;
   }
 
-  return env || window.location.origin || derivedTunnelUrl;
+  // Use env-configured URL (must be publicly reachable for devtunnel to work)
+  if (env) {
+    console.log('[Socket] Using configured socket URL:', env);
+    return env;
+  }
+
+  // Fallback to same origin (Vite proxy or reverse proxy will route to backend)
+  console.log('[Socket] Using window.origin:', window.location.origin);
+  return window.location.origin;
 };
 
 const SOCKET_SERVER_URL = getSocketUrl();
