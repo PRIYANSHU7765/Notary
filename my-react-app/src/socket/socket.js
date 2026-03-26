@@ -1,5 +1,22 @@
 import io from "socket.io-client";
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
+
+const isLocalPageHost = () => {
+  if (typeof window === 'undefined') return false;
+  return LOOPBACK_HOSTS.has(String(window.location.hostname || '').toLowerCase());
+};
+
+const isLoopbackUrl = (value) => {
+  if (!value || typeof value !== 'string') return false;
+  try {
+    const parsed = new URL(value);
+    return LOOPBACK_HOSTS.has(String(parsed.hostname || '').toLowerCase());
+  } catch {
+    return false;
+  }
+};
+
 const getStoredAuthToken = () => {
   try {
     const authUser = JSON.parse(window.localStorage.getItem('notary.authUser') || 'null');
@@ -17,9 +34,7 @@ const getSocketUrl = () => {
     import.meta.env.VITE_API_URL ||
     import.meta.env.VITE_REACT_APP_SERVER_URL;
 
-  const isLocalhost =
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1';
+  const isLocalhost = isLocalPageHost();
 
   const localSocketCandidates = ['http://localhost:5001', 'http://localhost:5000', 'http://localhost:5002'];
 
@@ -39,6 +54,12 @@ const getSocketUrl = () => {
     const normalizedEnv = String(env || '').trim().toLowerCase();
     const envIsLocal = localSocketCandidates.some((candidate) => candidate.toLowerCase() === normalizedEnv);
     return envIsLocal ? env : localSocketCandidates[0];
+  }
+
+  // On devtunnel/public URLs, localhost env values point to the viewer's own machine.
+  if (isLoopbackUrl(env)) {
+    console.warn('[Socket] Ignoring localhost socket env for non-local host; using window.origin instead');
+    return window.location.origin;
   }
 
   return env || window.location.origin;

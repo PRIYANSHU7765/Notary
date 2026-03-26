@@ -7,10 +7,35 @@ const configuredApiBaseUrl =
 const isDev = Boolean(import.meta.env.DEV);
 const DEV_LOCAL_API_BASES = ['http://localhost:5000', 'http://localhost:5001', 'http://localhost:5002'];
 const API_BASE_STORAGE_KEY = 'notary.apiBaseUrl';
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
+
+const isBrowser = typeof window !== 'undefined';
+const isLocalPageHost = isBrowser
+  ? LOOPBACK_HOSTS.has(String(window.location.hostname || '').toLowerCase())
+  : false;
+
+const isLoopbackUrl = (value) => {
+  if (!value || typeof value !== 'string') return false;
+  try {
+    const parsed = new URL(value);
+    return LOOPBACK_HOSTS.has(String(parsed.hostname || '').toLowerCase());
+  } catch {
+    return false;
+  }
+};
+
+const resolveReachableBaseUrl = (value) => {
+  if (!value || typeof value !== 'string') return null;
+  if (isLocalPageHost) return value;
+  return isLoopbackUrl(value) ? null : value;
+};
+
+const configuredReachableApiBaseUrl = resolveReachableBaseUrl(configuredApiBaseUrl);
+
 const API_BASE_CANDIDATES = [
-  ...(isDev ? DEV_LOCAL_API_BASES : []),
-  configuredApiBaseUrl,
-  (typeof window !== 'undefined' ? window.location.origin : ''),
+  ...(isDev && isLocalPageHost ? DEV_LOCAL_API_BASES : []),
+  configuredReachableApiBaseUrl,
+  (isBrowser ? window.location.origin : ''),
 ].filter((v) => typeof v === 'string' && v.trim() !== '');
 
 // Deduplicate while preserving order
@@ -21,30 +46,38 @@ const finalApiCandidates = uniqueCandidates.length ? uniqueCandidates : ['http:/
 const API_CANDIDATES = finalApiCandidates;
 
 const storedApiBaseUrl =
-  (typeof window !== 'undefined' && window.localStorage.getItem(API_BASE_STORAGE_KEY)) ||
+  (isBrowser && window.localStorage.getItem(API_BASE_STORAGE_KEY)) ||
   null;
 
 const normalizedStoredApiBaseUrl = (() => {
   if (!storedApiBaseUrl) return null;
+  const reachableStoredUrl = resolveReachableBaseUrl(storedApiBaseUrl);
+  if (!reachableStoredUrl) return null;
   if (!isDev) return storedApiBaseUrl;
 
   const normalized = String(storedApiBaseUrl).trim().toLowerCase();
   const isLocalDevApi = DEV_LOCAL_API_BASES.some((base) => base.toLowerCase() === normalized);
-  return isLocalDevApi ? storedApiBaseUrl : null;
+  if (isLocalPageHost) {
+    return isLocalDevApi ? storedApiBaseUrl : null;
+  }
+  return reachableStoredUrl;
 })();
 
 const preferredConfiguredApiBaseUrl = (() => {
-  if (!configuredApiBaseUrl) return null;
-  if (!isDev) return configuredApiBaseUrl;
+  if (!configuredApiBaseUrl || !configuredReachableApiBaseUrl) return null;
+  if (!isDev) return configuredReachableApiBaseUrl;
 
   const normalized = String(configuredApiBaseUrl).trim().toLowerCase();
   const isLocalDevApi = DEV_LOCAL_API_BASES.some((base) => base.toLowerCase() === normalized);
-  return isLocalDevApi ? configuredApiBaseUrl : null;
+  if (isLocalPageHost) {
+    return isLocalDevApi ? configuredApiBaseUrl : null;
+  }
+  return configuredReachableApiBaseUrl;
 })();
 
-if (typeof window !== 'undefined' && configuredApiBaseUrl && storedApiBaseUrl && storedApiBaseUrl !== configuredApiBaseUrl) {
+if (isBrowser && configuredReachableApiBaseUrl && storedApiBaseUrl && storedApiBaseUrl !== configuredReachableApiBaseUrl) {
   if (!isDev || preferredConfiguredApiBaseUrl) {
-    window.localStorage.setItem(API_BASE_STORAGE_KEY, configuredApiBaseUrl);
+    window.localStorage.setItem(API_BASE_STORAGE_KEY, configuredReachableApiBaseUrl);
   }
 }
 
@@ -91,7 +124,7 @@ async function fetchWithFallback(path, options = {}) {
     try {
       const response = await fetch(`${baseUrl}${path}`, requestOptions);
       lastWorkingApiBaseUrl = baseUrl;
-      if (typeof window !== 'undefined') {
+      if (isBrowser) {
         window.localStorage.setItem(API_BASE_STORAGE_KEY, baseUrl);
       }
       return response;
@@ -118,7 +151,7 @@ async function fetchWithNotFoundFallback(path, options = {}) {
       }
 
       lastWorkingApiBaseUrl = baseUrl;
-      if (typeof window !== 'undefined') {
+      if (isBrowser) {
         window.localStorage.setItem(API_BASE_STORAGE_KEY, baseUrl);
       }
       return response;
@@ -131,7 +164,10 @@ async function fetchWithNotFoundFallback(path, options = {}) {
   throw networkError || new Error('Unable to connect to backend server');
 }
 
-const API_BASE_URL = configuredApiBaseUrl || (isDev ? 'http://localhost:5001' : '');
+const API_BASE_URL =
+  configuredReachableApiBaseUrl ||
+  (isBrowser ? window.location.origin : '') ||
+  (isDev ? 'http://localhost:5001' : '');
 
 console.log('[API Client] Base URL:', API_BASE_URL);
 
