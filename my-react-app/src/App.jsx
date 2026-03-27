@@ -16,6 +16,7 @@ import NotaryToolsPage from './pages/NotaryToolsPage'
 import NotaryOnDemandPage from './pages/NotaryOnDemandPage'
 import NotaryMeetingsPage from './pages/NotaryMeetingsPage'
 import NotarySettingsPage from './pages/NotarySettingsPage'
+import NotaryAssetsPage from './pages/NotaryAssetsPage'
 import AdminPage from './pages/AdminPage'
 import HomePage from './pages/HomePage'
 import AuthPage from './pages/AuthPage'
@@ -355,6 +356,18 @@ function App() {
           <Route
             path="/notary/on-demand"
             element={<Navigate to="/notary/witness" replace />}
+          />
+          <Route
+            path="/notary/assets"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={['notary']}>
+                  <RequireKbaApproval>
+                    <NotaryAssetsPage />
+                  </RequireKbaApproval>
+                </RequireRole>
+              </RequireAuth>
+            }
           />
           <Route
             path="/notary/meetings"

@@ -6,6 +6,7 @@ const MENU_BY_ROLE = {
   notary: [
     { id: 'home', label: 'Home', path: '/notary/dashboard' },
     { id: 'transactions', label: 'Transactions', path: '/notary/transactions' },
+    { id: 'assets', label: 'Assets', path: '/notary/assets' },
     { id: 'witness', label: 'Witness', path: '/notary/witness' },
     { id: 'meetings', label: 'Meetings', path: '/notary/meetings' },
     { id: 'settings', label: 'Settings', path: '/notary/settings' },
