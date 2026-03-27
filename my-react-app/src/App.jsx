@@ -2,6 +2,7 @@ import React, { Component } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import OwnerPage from './pages/OwnerPage'
 import OwnerDashboardPage from './pages/OwnerDashboardPage'
+import OwnerAssetsPage from './pages/OwnerAssetsPage'
 import OwnerDocDashboardWrapper from './pages/OwnerDocDashboardWrapper'
 import OwnerHomeDashboardPage from './pages/OwnerHomeDashboardPage'
 import OwnerTransactionsPage from './pages/OwnerTransactionsPage'
@@ -246,6 +247,18 @@ function App() {
                 <RequireRole allowedRoles={['signer']}>
                   <RequireKbaApproval>
                     <OwnerMeetingsPage />
+                  </RequireKbaApproval>
+                </RequireRole>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/signer/assets"
+            element={
+              <RequireAuth>
+                <RequireRole allowedRoles={['signer']}>
+                  <RequireKbaApproval>
+                    <OwnerAssetsPage />
                   </RequireKbaApproval>
                 </RequireRole>
               </RequireAuth>

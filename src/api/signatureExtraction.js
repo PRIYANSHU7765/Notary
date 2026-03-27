@@ -21,7 +21,7 @@ const router = express.Router();
  *   "maxDetections": 15 (optional, default: 15)
  * }
  */
-router.post('/extract-yolo', async (req, res) => {
+const handleExtractYolo = async (req, res) => {
   try {
     const {
       dataUrl,
@@ -38,7 +38,6 @@ router.post('/extract-yolo', async (req, res) => {
       });
     }
 
-    // Validate dataUrl format
     if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
       return res.status(400).json({
         ok: false,
@@ -58,7 +57,6 @@ router.post('/extract-yolo', async (req, res) => {
 
     const result = await runPythonSignatureExtractor(payload);
 
-    // Ensure result has expected structure
     const response = {
       ok: true,
       pageNumber: result.pageNumber || payload.pageNumber,
@@ -71,13 +69,16 @@ router.post('/extract-yolo', async (req, res) => {
     console.log(`✅ Signature extraction complete: ${response.candidates.length} candidates found`);
     res.json(response);
   } catch (error) {
-    console.error('❌ Signature extraction error:', error.message);
+    console.error('❌ Signature extraction error:', error?.message || error);
     res.status(500).json({
       ok: false,
       error: error?.message || 'Signature extraction failed',
       details: error?.message,
     });
   }
-});
+};
+
+router.post('/extract-yolo', handleExtractYolo);
+router.post('/signature-extract-yolo', handleExtractYolo);
 
 module.exports = router;

@@ -14,6 +14,7 @@ const MENU_BY_ROLE = {
     { id: 'home', label: 'Home', path: '/signer/dashboard' },
     { id: 'transactions', label: 'Transactions', path: '/signer/transactions' },
     { id: 'meetings', label: 'Meetings', path: '/signer/meetings' },
+    { id: 'assets', label: 'Assets', path: '/signer/assets' },
     { id: 'upload', label: 'Upload document', path: '/signer/doc/dashboard' },
   ],
 };

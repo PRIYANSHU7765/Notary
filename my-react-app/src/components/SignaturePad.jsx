@@ -1,6 +1,6 @@
 import React, { useRef, useState } from "react";
 
-const SignaturePad = ({ onSignatureGenerated, title = "Draw Your Signature" }) => {
+const SignaturePad = ({ onSave, onSignatureGenerated, title = "Draw Your Signature" }) => {
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -52,11 +52,15 @@ const SignaturePad = ({ onSignatureGenerated, title = "Draw Your Signature" }) =
       const canvas = canvasRef.current;
       const signatureImage = canvas.toDataURL("image/png");
       console.log("✍️ Signature image generated, length:", signatureImage.length);
-      await onSignatureGenerated(signatureImage);
+      const saveFn = onSave || onSignatureGenerated;
+      if (!saveFn) {
+        throw new Error('No save callback provided');
+      }
+      await saveFn(signatureImage);
       console.log("✅ Signature saved successfully");
     } catch (error) {
       console.error("❌ Error in handleSave:", error);
-      alert("Error saving signature: " + error.message);
+      alert("Error saving signature: " + (error?.message || error));
     } finally {
       setIsSaving(false);
     }

@@ -59,14 +59,17 @@ const SignatureExtractionModal = ({
   const [previewDataUrl, setPreviewDataUrl] = useState("");
   const [resultCanvas, setResultCanvas] = useState(null);
   const [analysisInfo, setAnalysisInfo] = useState({ confidence: 0.25, iou: 0.45 });
+  const [localPdfDataUrl, setLocalPdfDataUrl] = useState("");
+  const [currentInputType, setCurrentInputType] = useState("pdf");
 
+  const effectivePdfDataUrl = pdfDataUrl || localPdfDataUrl;
   const pageCanvasRef = useRef(null);
 
   const selectedCandidate = useMemo(() => candidates[selectedIndex] || null, [candidates, selectedIndex]);
 
-  const runExtraction = async (targetPage, options = analysisInfo) => {
-    if (!pdfDataUrl) {
-      setError("Upload or open a PDF document before extracting signature.");
+  const runExtraction = async (targetPage, options = analysisInfo, sourceDataUrl = effectivePdfDataUrl) => {
+    if (!sourceDataUrl) {
+      setError("Upload or open a PDF/image before extracting signature.");
       return;
     }
 
@@ -74,7 +77,7 @@ const SignatureExtractionModal = ({
     setError("");
 
     try {
-      const result = await extractSignatureCandidatesFromPdf(pdfDataUrl, targetPage, {
+      const result = await extractSignatureCandidatesFromPdf(effectivePdfDataUrl, targetPage, {
         confidence: options.confidence,
         iou: options.iou,
       });
@@ -87,13 +90,15 @@ const SignatureExtractionModal = ({
       setAnalysisInfo({ confidence: options.confidence, iou: options.iou });
 
       if (!result.candidates.length) {
-        setPreviewDataUrl("");
         setError("No signature candidates found on this page. Try another page.");
+        if (currentInputType === 'image' || sourceDataUrl?.startsWith('data:image/')) {
+          setPreviewDataUrl(sourceDataUrl);
+        }
       }
     } catch (err) {
       setPreviewDataUrl("");
       setCandidates([]);
-      setError(err?.message || "Failed to analyze PDF for signature extraction.");
+      setError(err?.message || "Failed to analyze PDF/image for signature extraction.");
     } finally {
       setLoading(false);
     }
@@ -101,9 +106,18 @@ const SignatureExtractionModal = ({
 
   useEffect(() => {
     if (!open) return;
-    runExtraction(1);
+
+    if (!effectivePdfDataUrl) {
+      setError("Upload or open a PDF/image before extracting signature.");
+      setCandidates([]);
+      setPreviewDataUrl("");
+      setResultCanvas(null);
+      return;
+    }
+
+    runExtraction(1, analysisInfo, effectivePdfDataUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, pdfDataUrl]);
+  }, [open, effectivePdfDataUrl, currentInputType]);
 
   useEffect(() => {
     if (!resultCanvas || !pageCanvasRef.current) return;
@@ -189,7 +203,79 @@ const SignatureExtractionModal = ({
           </div>
         </div>
 
-        <div style={{ overflow: "auto", padding: "16px", display: "grid", gridTemplateColumns: "2fr 1fr", gap: "14px" }}>
+        <div style={{ padding: "16px", display: "grid", gridTemplateColumns: "1fr", gap: "14px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+            <label htmlFor="signature-file-upload" style={{ fontWeight: 600, color: "#0f172a" }}>
+              PDF/Image Document
+            </label>
+            <input
+              id="signature-file-upload"
+              type="file"
+              accept="application/pdf,image/png,image/jpeg"
+              onChange={async (event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+
+                const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+                const isImage = file.type.startsWith('image/') || /\.(jpe?g|png)$/i.test(file.name);
+
+                if (!isPdf && !isImage) {
+                  setError('Please select PDF, JPG, JPEG, or PNG for signature extraction');
+                  return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = async () => {
+                  if (!reader.result) return;
+
+                  const dataUrl = reader.result.toString();
+                  setLocalPdfDataUrl(dataUrl);
+                  setCurrentInputType(isPdf ? 'pdf' : 'image');
+                  setError('');
+
+                  if (isImage) {
+                    setPreviewDataUrl(dataUrl);
+                  } else {
+                    setPreviewDataUrl('');
+                    setPageNumber(1);
+                    setTotalPages(1);
+                  }
+
+                  setCandidates([]);
+                  setResultCanvas(null);
+
+                  await runExtraction(1, analysisInfo, dataUrl);
+                };
+                reader.onerror = () => setError('Unable to read the selected file');
+                reader.readAsDataURL(file);
+              }}
+              style={{ padding: '4px' }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (!effectivePdfDataUrl) {
+                  setError('Upload or open a document before scanning.');
+                  return;
+                }
+
+                runExtraction(pageNumber, analysisInfo, effectivePdfDataUrl);
+              }}
+              disabled={loading}
+              style={{
+                border: 'none',
+                borderRadius: '8px',
+                background: loading ? '#94a3b8' : '#0ea5e9',
+                color: '#fff',
+                fontWeight: 700,
+                padding: '9px 12px',
+                cursor: loading ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {currentInputType === 'image' ? 'Use Image' : 'Scan PDF'}
+            </button>
+          </div>
+
           <div
             style={{
               border: "1px solid #cbd5e1",
@@ -203,6 +289,12 @@ const SignatureExtractionModal = ({
               <div style={{ padding: "40px 20px", textAlign: "center", color: "#475569", fontWeight: 600 }}>
                 Running YOLO signature detection on this page...
               </div>
+            ) : currentInputType === 'image' && previewDataUrl ? (
+              <img
+                src={previewDataUrl}
+                alt="Uploaded image preview"
+                style={{ display: 'block', width: '100%', height: 'auto', objectFit: 'contain' }}
+              />
             ) : (
               <canvas
                 ref={pageCanvasRef}
