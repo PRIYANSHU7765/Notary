@@ -6,7 +6,7 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const { requireAuth } = require('../middleware/auth');
-const { dbGet, dbRun, now, persistDatabase } = require('../db');
+const { dbGet, dbAll, dbRun, now, persistDatabase } = require('../db');
 const { hashOtpCode, sendOtpViaEmail, isValidEmailAddress } = require('../utils/kbaUtils');
 const { KBA_STATUS } = require('../utils/constants');
 
@@ -20,7 +20,6 @@ function ensureKbaStorageDir() {
   }
 }
 
-// Send OTP
 router.post('/otp/send', requireAuth, async (req, res) => {
   try {
     const currentUser = await dbGet('SELECT otpVerified, kbaStatus, email FROM users WHERE userId = :userId', { userId: req.auth.userId });
@@ -77,6 +76,7 @@ router.post('/otp/send', requireAuth, async (req, res) => {
     );
 
     await persistDatabase();
+
     await sendOtpViaEmail({ destination, code: otpCode });
 
     const responsePayload = {
@@ -89,6 +89,7 @@ router.post('/otp/send', requireAuth, async (req, res) => {
     };
 
     if (process.env.NODE_ENV === 'development') {
+      // For local development and testing only, expose OTP to frontend (no email needed)
       responsePayload.debugOtp = otpCode;
     }
 
@@ -99,7 +100,6 @@ router.post('/otp/send', requireAuth, async (req, res) => {
   }
 });
 
-// Verify OTP
 router.post('/otp/verify', requireAuth, async (req, res) => {
   try {
     const user = await dbGet('SELECT otpVerified FROM users WHERE userId = :userId', { userId: req.auth.userId });
@@ -137,19 +137,36 @@ router.post('/otp/verify', requireAuth, async (req, res) => {
     const verified = computedHash === storedHash;
 
     if (!verified) {
-      await dbRun('UPDATE otp_challenges SET attempts = attempts + 1 WHERE id = :id', { id: challenge.id });
+      dbRun('UPDATE otp_challenges SET attempts = attempts + 1 WHERE id = :id', { id: challenge.id });
       await persistDatabase();
-      return res.status(400).json({ ok: false, error: 'Invalid OTP code' });
+      
+      // Enhanced error response with debugging info in development mode
+      const response = { 
+        ok: false, 
+        error: 'Invalid OTP code',
+        attemptsRemaining: Math.max(0, (challenge.maxAttempts || 5) - (Number(challenge.attempts || 0) + 1))
+      };
+      
+      if (process.env.NODE_ENV === 'development') {
+        response.debug = {
+          provided: otpCode,
+          hasHash: !!storedHash,
+          computedHashLength: computedHash.length,
+          storedHashLength: storedHash.length
+        };
+      }
+      
+      return res.status(400).json(response);
     }
 
-    // Mark as verified
-    await dbRun('UPDATE otp_challenges SET verifiedAt = :verifiedAt WHERE id = :id', {
+    // OTP is valid - mark it as verified in the challenge
+    dbRun('UPDATE otp_challenges SET verifiedAt = :verifiedAt WHERE id = :id', {
       id: challenge.id,
       verifiedAt: nowMs,
     });
 
-    // Update user status
-    await dbRun(
+    // Update user OTP verification status
+    dbRun(
       `UPDATE users SET otpVerified = 1, kbaStatus = :kbaStatus, kbaUpdatedAt = :kbaUpdatedAt, kbaRejectedReason = NULL WHERE userId = :userId`,
       {
         userId: req.auth.userId,
@@ -169,12 +186,21 @@ router.post('/otp/verify', requireAuth, async (req, res) => {
   }
 });
 
-// Upload KBA documents
 router.post('/upload', requireAuth, async (req, res) => {
   try {
     const documentType = String(req.body?.documentType || '').trim();
     let front = req.body?.front || {};
     let back = req.body?.back || {};
+
+    // Backward compatibility: old client may send documentDataUrl directly
+    if (!front.documentDataUrl && req.body?.documentDataUrl) {
+      front = {
+        fileName: String(req.body?.fileName || 'kba-document').trim(),
+        mimeType: String(req.body?.mimeType || 'application/octet-stream').trim(),
+        documentDataUrl: String(req.body?.documentDataUrl || '').trim(),
+      };
+      back = back || {};
+    }
 
     const fileNameFront = String(front.fileName || '').trim();
     const mimeTypeFront = String(front.mimeType || 'application/octet-stream').trim();
@@ -184,45 +210,72 @@ router.post('/upload', requireAuth, async (req, res) => {
     const mimeTypeBack = String(back.mimeType || 'application/octet-stream').trim();
     const documentDataUrlBack = String(back.documentDataUrl || '').trim();
 
-    console.log(`[KBA Upload] Received: documentType=${documentType}, front=${fileNameFront}, back=${fileNameBack}`);
+    console.log(`[KBA Upload] Validating: documentType=${documentType}, frontFile=${fileNameFront}, backFile=${fileNameBack}`);
+    console.log(`[KBA Upload] Front dataUrl length: ${documentDataUrlFront.length}, Back dataUrl length: ${documentDataUrlBack.length}`);
 
     // Validation
     if (!documentType) {
       return res.status(400).json({ ok: false, error: 'documentType is required' });
     }
-    if (!fileNameFront || !documentDataUrlFront) {
-      return res.status(400).json({ ok: false, error: 'Front side file is required' });
+
+    if (!fileNameFront) {
+      return res.status(400).json({ ok: false, error: 'Front side: fileName is required' });
     }
-    if (!fileNameBack || !documentDataUrlBack) {
-      return res.status(400).json({ ok: false, error: 'Back side file is required' });
+    if (!documentDataUrlFront) {
+      return res.status(400).json({ ok: false, error: 'Front side: documentDataUrl is required (file data missing)' });
     }
 
-    // Check OTP verification
-    const user = await dbGet('SELECT otpVerified FROM users WHERE userId = :userId', { userId: req.auth.userId });
-    if (!user || Number(user.otpVerified) !== 1) {
-      console.log(`[KBA Upload] OTP not verified for user ${req.auth.userId}. Value: ${user?.otpVerified}`);
-      return res.status(403).json({ ok: false, error: 'Verify OTP before uploading KBA documents' });
+    if (!fileNameBack) {
+      return res.status(400).json({ ok: false, error: 'Back side: fileName is required' });
+    }
+    if (!documentDataUrlBack) {
+      return res.status(400).json({ ok: false, error: 'Back side: documentDataUrl is required (file data missing)' });
+    }
+
+    // Check OTP verification status - read directly from database
+    const user = dbGet('SELECT otpVerified, kbaStatus FROM users WHERE userId = :userId', { userId: req.auth.userId });
+    console.log(`[KBA Upload] OTP Check for user ${req.auth.userId}:`, {
+      userExists: !!user,
+      otpVerified: user?.otpVerified,
+      kbaStatus: user?.kbaStatus,
+      otpVerifiedType: typeof user?.otpVerified,
+      otpVerifiedValue: user?.otpVerified ? 'truthy' : 'falsy',
+    });
+
+    if (!user) {
+      return res.status(404).json({ ok: false, error: 'User not found' });
+    }
+
+    const otpVerifiedValue = user.otpVerified;
+    const isOtpVerified = otpVerifiedValue === 1 || otpVerifiedValue === true || otpVerifiedValue === '1' || Number(otpVerifiedValue) === 1;
+    
+    if (!isOtpVerified) {
+      console.log(`[KBA Upload] OTP not verified for user ${req.auth.userId}. Value: ${otpVerifiedValue} (type: ${typeof otpVerifiedValue})`);
+      return res.status(403).json({ ok: false, error: 'Verify OTP before uploading KBA documents', otpVerified: otpVerifiedValue });
     }
 
     const nowMs = now();
     ensureKbaStorageDir();
 
-    // Save files
-    const saveSide = (fileName, mimeType, dataUrl, label) => {
-      const ext = path.extname(fileName) || '.bin';
+    // Helper to save file side
+    const saveSide = (sideFileName, sideMimeType, sideDataUrl, sideLabel) => {
+      const ext = path.extname(sideFileName) || '.bin';
       const safeExt = /^[.A-Za-z0-9_-]+$/.test(ext) ? ext : '.bin';
-      const outPath = path.join(KBA_STORAGE_DIR, `${req.auth.userId}-${label}-${nowMs}${safeExt}`);
-      const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
-      const buffer = Buffer.from(base64, 'base64');
+      const outPath = path.join(KBA_STORAGE_DIR, `${req.auth.userId}-${sideLabel}-${nowMs}${safeExt}`);
+      const base64Payload = sideDataUrl.includes(',') ? sideDataUrl.split(',')[1] : sideDataUrl;
+      const buffer = Buffer.from(base64Payload, 'base64');
       fs.writeFileSync(outPath, buffer);
       return { outPath, fileSize: buffer.length };
     };
 
+    // Save both sides
     const frontSave = saveSide(fileNameFront, mimeTypeFront, documentDataUrlFront, 'front');
     const backSave = saveSide(fileNameBack, mimeTypeBack, documentDataUrlBack, 'back');
 
-    // Store in database
-    await dbRun(
+    console.log(`[KBA Upload] Files saved - Front: ${frontSave.fileSize} bytes, Back: ${backSave.fileSize} bytes`);
+
+    // Insert or update kba_submissions record
+    dbRun(
       `INSERT INTO kba_submissions (userId, documentType, fileNameFront, mimeTypeFront, filePathFront, fileNameBack, mimeTypeBack, filePathBack, submittedAt, status, rejectionReason, reviewedAt, reviewedBy, metadata)
        VALUES (:userId, :documentType, :fileNameFront, :mimeTypeFront, :filePathFront, :fileNameBack, :mimeTypeBack, :filePathBack, :submittedAt, :status, :rejectionReason, :reviewedAt, :reviewedBy, :metadata)
        ON CONFLICT(userId) DO UPDATE SET
@@ -234,7 +287,11 @@ router.post('/upload', requireAuth, async (req, res) => {
          mimeTypeBack = excluded.mimeTypeBack,
          filePathBack = excluded.filePathBack,
          submittedAt = excluded.submittedAt,
-         status = excluded.status`,
+         status = excluded.status,
+         rejectionReason = excluded.rejectionReason,
+         reviewedAt = excluded.reviewedAt,
+         reviewedBy = excluded.reviewedBy,
+         metadata = excluded.metadata`,
       {
         userId: req.auth.userId,
         documentType,
@@ -253,9 +310,13 @@ router.post('/upload', requireAuth, async (req, res) => {
       }
     );
 
-    // Update user status
-    await dbRun(
-      `UPDATE users SET kbaStatus = :kbaStatus, kbaUpdatedAt = :kbaUpdatedAt, kbaRejectedReason = NULL WHERE userId = :userId`,
+    // Update user KBA status
+    dbRun(
+      `UPDATE users
+       SET kbaStatus = :kbaStatus,
+           kbaUpdatedAt = :kbaUpdatedAt,
+           kbaRejectedReason = NULL
+       WHERE userId = :userId`,
       {
         userId: req.auth.userId,
         kbaStatus: KBA_STATUS.PENDING_REVIEW,
@@ -265,7 +326,7 @@ router.post('/upload', requireAuth, async (req, res) => {
 
     await persistDatabase();
 
-    console.log(`[KBA Upload] Success for user ${req.auth.userId}`);
+    console.log(`[KBA Upload] Documents successfully stored for user ${req.auth.userId}`);
 
     return res.json({
       ok: true,
@@ -281,55 +342,107 @@ router.post('/upload', requireAuth, async (req, res) => {
   }
 });
 
-// Get KBA status
-router.get('/status', requireAuth, async (req, res) => {
-  try {
-    const submission = await dbGet('SELECT * FROM kba_submissions WHERE userId = :userId', { userId: req.auth.userId });
-    const user = await dbGet(
-      'SELECT userId, username, role, otpVerified, kbaStatus, kbaApprovedAt, kbaRejectedReason, kbaUpdatedAt, phoneNumber FROM users WHERE userId = :userId',
-      { userId: req.auth.userId }
+    const nowMs = now();
+    ensureKbaStorageDir();
+
+    // Helper to save file side
+    const saveSide = (sideFileName, sideMimeType, sideDataUrl, sideLabel) => {
+      const ext = path.extname(sideFileName) || '.bin';
+      const safeExt = /^[.A-Za-z0-9_-]+$/.test(ext) ? ext : '.bin';
+      const outPath = path.join(KBA_STORAGE_DIR, `${req.auth.userId}-${sideLabel}-${nowMs}${safeExt}`);
+      const base64Payload = sideDataUrl.includes(',') ? sideDataUrl.split(',')[1] : sideDataUrl;
+      const buffer = Buffer.from(base64Payload, 'base64');
+      fs.writeFileSync(outPath, buffer);
+      return { outPath, fileSize: buffer.length };
+    };
+
+    // Save both sides
+    const frontSave = saveSide(fileNameFront, mimeTypeFront, documentDataUrlFront, 'front');
+    const backSave = saveSide(fileNameBack, mimeTypeBack, documentDataUrlBack, 'back');
+
+    console.log(`[KBA Upload] Files saved - Front: ${frontSave.fileSize} bytes, Back: ${backSave.fileSize} bytes`);
+
+    // Insert or update kba_submissions record
+    dbRun(
+      `INSERT INTO kba_submissions (userId, documentType, fileNameFront, mimeTypeFront, filePathFront, fileNameBack, mimeTypeBack, filePathBack, submittedAt, status, rejectionReason, reviewedAt, reviewedBy, metadata)
+       VALUES (:userId, :documentType, :fileNameFront, :mimeTypeFront, :filePathFront, :fileNameBack, :mimeTypeBack, :filePathBack, :submittedAt, :status, :rejectionReason, :reviewedAt, :reviewedBy, :metadata)
+       ON CONFLICT(userId) DO UPDATE SET
+         documentType = excluded.documentType,
+         fileNameFront = excluded.fileNameFront,
+         mimeTypeFront = excluded.mimeTypeFront,
+         filePathFront = excluded.filePathFront,
+         fileNameBack = excluded.fileNameBack,
+         mimeTypeBack = excluded.mimeTypeBack,
+         filePathBack = excluded.filePathBack,
+         submittedAt = excluded.submittedAt,
+         status = excluded.status,
+         rejectionReason = excluded.rejectionReason,
+         reviewedAt = excluded.reviewedAt,
+         reviewedBy = excluded.reviewedBy,
+         metadata = excluded.metadata`,
+      {
+        userId: req.auth.userId,
+        documentType,
+        fileNameFront,
+        mimeTypeFront,
+        filePathFront: frontSave.outPath,
+        fileNameBack,
+        mimeTypeBack,
+        filePathBack: backSave.outPath,
+        submittedAt: nowMs,
+        status: KBA_STATUS.PENDING_REVIEW,
+        rejectionReason: null,
+        reviewedAt: null,
+        reviewedBy: null,
+        metadata: JSON.stringify({ frontSize: frontSave.fileSize, backSize: backSave.fileSize }),
+      }
     );
 
-    if (!user) {
-      return res.status(404).json({ ok: false, error: 'User not found' });
-    }
+    // Update user KBA status
+    dbRun(
+      `UPDATE users
+       SET kbaStatus = :kbaStatus,
+           kbaUpdatedAt = :kbaUpdatedAt,
+           kbaRejectedReason = NULL
+       WHERE userId = :userId`,
+      {
+        userId: req.auth.userId,
+        kbaStatus: KBA_STATUS.PENDING_REVIEW,
+        kbaUpdatedAt: nowMs,
+      }
+    );
+
+    await persistDatabase();
+
+    console.log(`[KBA Upload] Documents successfully stored for user ${req.auth.userId}`);
 
     return res.json({
       ok: true,
-      user: {
-        userId: user.userId,
-        username: user.username,
-        role: user.role,
-        otpVerified: Number(user.otpVerified) === 1,
-        kbaStatus: user.kbaStatus || KBA_STATUS.DRAFT,
-        kbaApprovedAt: user.kbaApprovedAt || null,
-        kbaRejectedReason: user.kbaRejectedReason || null,
-        kbaUpdatedAt: user.kbaUpdatedAt || null,
-        phoneNumber: user.phoneNumber || null,
-      },
-      submission: submission
-        ? {
-            userId: submission.userId,
-            documentType: submission.documentType,
-            fileNameFront: submission.fileNameFront || submission.fileName || null,
-            mimeTypeFront: submission.mimeTypeFront || submission.mimeType || null,
-            fileNameBack: submission.fileNameBack || null,
-            mimeTypeBack: submission.mimeTypeBack || null,
-            submittedAt: submission.submittedAt || null,
-            status: submission.status || null,
-            rejectionReason: submission.rejectionReason || null,
-            reviewedAt: submission.reviewedAt || null,
-            reviewedBy: submission.reviewedBy || null,
-          }
-        : null,
+      kbaStatus: KBA_STATUS.PENDING_REVIEW,
+      submittedAt: nowMs,
+      documentType,
+      fileNameFront,
+      fileNameBack,
     });
+  } catch (error) {
+    console.error('[KBA Upload] Error:', error);
+    return res.status(500).json({ ok: false, error: error.message || 'Failed to upload KBA document' });
+  }
+});
+
+router.get('/status', requireAuth, async (req, res) => {
+  try {
+    const user = await dbGet('SELECT kbaStatus, otpVerified FROM users WHERE userId = :userId', { userId: req.auth.userId });
+    if (!user) {
+      return res.status(404).json({ ok: false, error: 'User not found' });
+    }
+    return res.json({ ok: true, kbaStatus: user.kbaStatus || KBA_STATUS.DRAFT, otpVerified: Boolean(Number(user.otpVerified)) });
   } catch (error) {
     console.error('Error fetching KBA status:', error);
     return res.status(500).json({ ok: false, error: error.message || 'Failed to fetch KBA status' });
   }
 });
 
-// Cancel KBA
 router.post('/cancel', requireAuth, async (req, res) => {
   try {
     await dbRun('DELETE FROM otp_challenges WHERE userId = :userId', { userId: req.auth.userId });

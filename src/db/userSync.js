@@ -52,12 +52,13 @@ function loadUsersFromJson() {
   }
 }
 
-function syncUsersJsonFromDb(dbAll) {
+async function syncUsersJsonFromDb(dbAll) {
   try {
     ensureUsersJsonFile();
-    const users = dbAll(
+    const rawUsers = await dbAll(
       'SELECT userId, username, email, passwordHash, role, createdAt FROM users ORDER BY createdAt DESC'
-    ).map((user) => ({
+    );
+    const users = rawUsers.map((user) => ({
       userId: user.userId,
       username: user.username,
       email: user.email,

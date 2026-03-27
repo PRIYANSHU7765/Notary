@@ -4,7 +4,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { dbGet } = require('../db');
+const { dbGet, dbAll } = require('../db');
 
 // Health check endpoint
 router.get('/health', (req, res) => {
@@ -17,9 +17,9 @@ router.get('/', (req, res) => {
 });
 
 // Active sessions for monitoring
-router.get('/api/sessions', (req, res) => {
+router.get('/api/sessions', async (req, res) => {
   try {
-    const sessions = dbGet('SELECT sessionId, active, ownerId, createdAt FROM sessions LIMIT 100');
+    const sessions = await dbAll('SELECT sessionId, active, ownerId, createdAt FROM sessions LIMIT 100');
     res.json({ ok: true, sessions: sessions || [] });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
@@ -27,9 +27,9 @@ router.get('/api/sessions', (req, res) => {
 });
 
 // List all users (public)
-router.get('/api/users', (req, res) => {
+router.get('/api/users', async (req, res) => {
   try {
-    const users = dbGet(
+    const users = await dbAll(
       'SELECT userId, username, email, role, createdAt FROM users ORDER BY createdAt DESC LIMIT 100'
     );
     res.json({ ok: true, users: users || [] });

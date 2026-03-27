@@ -35,7 +35,7 @@ const getSocketUrl = () => {
     import.meta.env.VITE_REACT_APP_SERVER_URL;
 
   const isLocalhost = isLocalPageHost();
-  const localSocketCandidates = ['http://localhost:5001', 'http://localhost:5000', 'http://localhost:5002'];
+  const localSocketCandidates = ['http://localhost:5000', 'http://localhost:5001', 'http://localhost:5002'];
 
   // On localhost, prefer env-configured URLs or fallback to local candidates
   if (isLocalhost) {

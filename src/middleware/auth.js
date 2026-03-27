@@ -7,35 +7,40 @@ const { readAuthToken, verifyAccessToken } = require('../services/authService');
 const { dbGet } = require('../db');
 const { isKbaApprovedStatus, shouldRequireKbaForRole } = require('../utils/validators');
 
-const requireAuth = (req, res, next) => {
-  const token = readAuthToken(req);
-  const payload = verifyAccessToken(token);
+const requireAuth = async (req, res, next) => {
+  try {
+    const token = readAuthToken(req);
+    const payload = verifyAccessToken(token);
 
-  if (!payload) {
-    return res.status(401).json({ ok: false, error: 'Unauthorized: Invalid or missing token' });
+    if (!payload) {
+      return res.status(401).json({ ok: false, error: 'Unauthorized: Invalid or missing token' });
+    }
+
+    const user = await dbGet(
+      'SELECT userId, username, email, role, otpVerified, kbaStatus, kbaApprovedAt, kbaRejectedReason, phoneNumber FROM users WHERE userId = :userId',
+      { userId: payload.userId }
+    );
+
+    if (!user) {
+      return res.status(401).json({ ok: false, error: 'Unauthorized: User not found' });
+    }
+
+    req.auth = {
+      userId: user.userId,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      otpVerified: Number(user.otpVerified || 0),
+      kbaStatus: user.kbaStatus || 'draft',
+      kbaApprovedAt: user.kbaApprovedAt,
+      phoneNumber: user.phoneNumber,
+    };
+
+    next();
+  } catch (err) {
+    console.error('Auth middleware error:', err);
+    return res.status(500).json({ ok: false, error: 'Authentication service error' });
   }
-
-  const user = dbGet(
-    'SELECT userId, username, email, role, otpVerified, kbaStatus, kbaApprovedAt, kbaRejectedReason, phoneNumber FROM users WHERE userId = :userId',
-    { userId: payload.userId }
-  );
-
-  if (!user) {
-    return res.status(401).json({ ok: false, error: 'Unauthorized: User not found' });
-  }
-
-  req.auth = {
-    userId: user.userId,
-    username: user.username,
-    email: user.email,
-    role: user.role,
-    otpVerified: Number(user.otpVerified || 0),
-    kbaStatus: user.kbaStatus || 'draft',
-    kbaApprovedAt: user.kbaApprovedAt,
-    phoneNumber: user.phoneNumber,
-  };
-
-  next();
 };
 
 const requireRole = (allowedRoles = []) => (req, res, next) => {

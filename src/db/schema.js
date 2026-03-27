@@ -10,12 +10,12 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE NOT NULL,
   passwordHash TEXT NOT NULL,
   role TEXT NOT NULL,
-  createdAt INTEGER NOT NULL,
+  createdAt BIGINT NOT NULL,
   otpVerified INTEGER NOT NULL DEFAULT 0,
   kbaStatus TEXT NOT NULL DEFAULT 'draft',
-  kbaApprovedAt INTEGER,
+  kbaApprovedAt BIGINT,
   kbaRejectedReason TEXT,
-  kbaUpdatedAt INTEGER,
+  kbaUpdatedAt BIGINT,
   phoneNumber TEXT
 );
 
@@ -25,11 +25,11 @@ CREATE TABLE IF NOT EXISTS otp_challenges (
   destination TEXT NOT NULL,
   channel TEXT NOT NULL,
   otpHash TEXT NOT NULL,
-  expiresAt INTEGER NOT NULL,
+  expiresAt BIGINT NOT NULL,
   attempts INTEGER NOT NULL DEFAULT 0,
   maxAttempts INTEGER NOT NULL DEFAULT 5,
-  verifiedAt INTEGER,
-  createdAt INTEGER NOT NULL
+  verifiedAt BIGINT,
+  createdAt BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS kba_submissions (
@@ -41,10 +41,10 @@ CREATE TABLE IF NOT EXISTS kba_submissions (
   fileNameBack TEXT NOT NULL,
   mimeTypeBack TEXT,
   filePathBack TEXT NOT NULL,
-  submittedAt INTEGER NOT NULL,
+  submittedAt BIGINT NOT NULL,
   status TEXT NOT NULL DEFAULT 'kba_pending_review',
   rejectionReason TEXT,
-  reviewedAt INTEGER,
+  reviewedAt BIGINT,
   reviewedBy TEXT,
   metadata TEXT
 );
@@ -57,8 +57,8 @@ CREATE TABLE IF NOT EXISTS signatures (
   name TEXT,
   image TEXT NOT NULL,
   userRole TEXT NOT NULL,
-  createdAt INTEGER NOT NULL,
-  updatedAt INTEGER NOT NULL
+  createdAt BIGINT NOT NULL,
+  updatedAt BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS assets (
@@ -73,8 +73,8 @@ CREATE TABLE IF NOT EXISTS assets (
   width INTEGER,
   height INTEGER,
   userRole TEXT NOT NULL,
-  createdAt INTEGER NOT NULL,
-  updatedAt INTEGER NOT NULL
+  createdAt BIGINT NOT NULL,
+  updatedAt BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -85,8 +85,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   participants TEXT,
   active INTEGER DEFAULT 1,
   terminated INTEGER DEFAULT 0,
-  createdAt INTEGER NOT NULL,
-  updatedAt INTEGER NOT NULL
+  createdAt BIGINT NOT NULL,
+  updatedAt BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS owner_documents (
@@ -94,27 +94,29 @@ CREATE TABLE IF NOT EXISTS owner_documents (
   ownerId TEXT NOT NULL,
   ownerName TEXT NOT NULL,
   sessionId TEXT,
-  scheduledAt INTEGER,
+  scheduledAt BIGINT,
   name TEXT NOT NULL,
   size INTEGER,
   type TEXT,
   dataUrl TEXT,
   notarizedDataUrl TEXT,
   notarizedPath TEXT,
-  uploadedAt INTEGER NOT NULL,
+  uploadedAt BIGINT NOT NULL,
   inProcess INTEGER NOT NULL DEFAULT 0,
   notarized INTEGER NOT NULL DEFAULT 0,
-  notarizedAt INTEGER,
+  notarizedAt BIGINT,
+  startedAt BIGINT,
+  endedAt BIGINT,
   notaryId TEXT,
   notaryName TEXT,
   notaryReview TEXT DEFAULT 'pending',
-  notaryReviewedAt INTEGER,
+  notaryReviewedAt BIGINT,
   status TEXT NOT NULL DEFAULT 'uploaded',
   sessionAmount REAL NOT NULL DEFAULT 0,
   paymentStatus TEXT NOT NULL DEFAULT 'not_required',
-  paymentRequestedAt INTEGER,
+  paymentRequestedAt BIGINT,
   paymentRequestedBy TEXT,
-  paymentPaidAt INTEGER,
+  paymentPaidAt BIGINT,
   paymentTransactionId TEXT,
   paymentMethod TEXT
 );
@@ -131,11 +133,11 @@ CREATE TABLE IF NOT EXISTS notary_calls (
   callType TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'initiated',
   amount REAL NOT NULL DEFAULT 0,
-  startedAt INTEGER,
-  completedAt INTEGER,
+  startedAt BIGINT,
+  completedAt BIGINT,
   duration INTEGER,
-  createdAt INTEGER NOT NULL,
-  updatedAt INTEGER NOT NULL,
+  createdAt BIGINT NOT NULL,
+  updatedAt BIGINT NOT NULL,
   FOREIGN KEY (documentId) REFERENCES owner_documents(id) ON DELETE CASCADE
 );
 
@@ -154,11 +156,11 @@ CREATE TABLE IF NOT EXISTS recordings (
   shareUrl TEXT,
   status TEXT NOT NULL DEFAULT 'uploaded',
   errorMessage TEXT,
-  startedAt INTEGER,
-  endedAt INTEGER,
+  startedAt BIGINT,
+  endedAt BIGINT,
   durationMs INTEGER,
-  createdAt INTEGER NOT NULL,
-  updatedAt INTEGER NOT NULL
+  createdAt BIGINT NOT NULL,
+  updatedAt BIGINT NOT NULL
 );
 `;
 

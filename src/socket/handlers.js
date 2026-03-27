@@ -5,7 +5,6 @@
 
 const { upsertSessionParticipant, removeSessionParticipant } = require('../db/sessionHelpers');
 const { normalizeRoomId, normalizeRole } = require('../utils/normalizers');
-const { dbGet } = require('../db');
 
 // In-memory session tracking
 const sessions = new Map();
@@ -17,10 +16,11 @@ function registerSocketHandlers(io) {
     console.log(`🔌 User connected: ${socket.id}`);
 
     // Join session event
-    socket.on('joinSession', (data) => {
+    socket.on('joinSession', async (data) => {
       try {
-        const { sessionId, userId, username, role } = data;
-        const normalizedSessionId = normalizeRoomId(sessionId);
+        const { sessionId, roomId, userId, username, role } = data || {};
+        // Frontend currently emits roomId. Keep sessionId for backward compatibility.
+        const normalizedSessionId = normalizeRoomId(sessionId || roomId);
 
         if (!normalizedSessionId) {
           socket.emit('error', { message: 'Invalid session ID' });
@@ -28,13 +28,20 @@ function registerSocketHandlers(io) {
         }
 
         // Update database
-        upsertSessionParticipant({
+        const sessionRow = await upsertSessionParticipant({
           sessionId: normalizedSessionId,
           socketId: socket.id,
           userId: userId || null,
           username: username || null,
           role: normalizeRole(role),
         });
+
+        let participants = [];
+        try {
+          participants = JSON.parse(sessionRow?.participants || '[]');
+        } catch {
+          participants = [];
+        }
 
         // Track in memory
         userSessions.set(socket.id, {
@@ -47,9 +54,12 @@ function registerSocketHandlers(io) {
         // Join socket room
         socket.join(normalizedSessionId);
 
-        // Broadcast users connected
-        io.to(normalizedSessionId).emit('usersConnected', {
+        // Broadcast users connected as an array; UI listeners expect iterable users.
+        io.to(normalizedSessionId).emit('usersConnected', participants);
+        io.to(normalizedSessionId).emit('sessionStatus', {
           sessionId: normalizedSessionId,
+          ownerConnected: participants.some((p) => normalizeRole(p.role) === 'signer'),
+          allUsers: participants,
           timestamp: new Date().toISOString(),
         });
 
@@ -179,12 +189,19 @@ function registerSocketHandlers(io) {
     });
 
     // Disconnect event
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
       try {
         const tracked = userSessions.get(socket.id);
         if (tracked) {
-          removeSessionParticipant(tracked.roomId, socket.id);
-          io.to(tracked.roomId).emit('usersConnected', { sessionId: tracked.roomId });
+          const updated = await removeSessionParticipant(tracked.roomId, socket.id);
+          const participants = Array.isArray(updated?.participants) ? updated.participants : [];
+          io.to(tracked.roomId).emit('usersConnected', participants);
+          io.to(tracked.roomId).emit('sessionStatus', {
+            sessionId: tracked.roomId,
+            ownerConnected: participants.some((p) => normalizeRole(p.role) === 'signer'),
+            allUsers: participants,
+            timestamp: new Date().toISOString(),
+          });
         }
         userSessions.delete(socket.id);
         console.log(`🔌 User disconnected: ${socket.id}`);

@@ -7,10 +7,10 @@ const { dbGet, dbRun, persistDatabase, now } = require('./index');
 const { normalizeRole } = require('../utils/normalizers');
 const crypto = require('crypto');
 
-function upsertSessionParticipant({ sessionId, socketId, userId, username, role }) {
+async function upsertSessionParticipant({ sessionId, socketId, userId, username, role }) {
   if (!sessionId) throw new Error('sessionId required');
 
-  const existing = dbGet('SELECT * FROM sessions WHERE sessionId = :sessionId', { sessionId });
+  const existing = await dbGet('SELECT * FROM sessions WHERE sessionId = :sessionId', { sessionId });
 
   if (existing && Number(existing.terminated) === 1) {
     throw new Error('Session is terminated');
@@ -50,26 +50,26 @@ function upsertSessionParticipant({ sessionId, socketId, userId, username, role 
     updatedAt: now(),
   };
 
-  dbRun(
+  await dbRun(
     `INSERT INTO sessions (sessionId, ownerId, ownerUsername, notaryIds, participants, active, createdAt, updatedAt)
      VALUES (:sessionId, :ownerId, :ownerUsername, :notaryIds, :participants, :active, :createdAt, :updatedAt)
-     ON CONFLICT(sessionId) DO UPDATE SET
-       ownerId = excluded.ownerId,
-       ownerUsername = excluded.ownerUsername,
-       notaryIds = excluded.notaryIds,
-       participants = excluded.participants,
-       active = excluded.active,
-       updatedAt = excluded.updatedAt`,
+     ON CONFLICT (sessionId) DO UPDATE SET
+       ownerId = EXCLUDED.ownerId,
+       ownerUsername = EXCLUDED.ownerUsername,
+       notaryIds = EXCLUDED.notaryIds,
+       participants = EXCLUDED.participants,
+       active = EXCLUDED.active,
+       updatedAt = EXCLUDED.updatedAt`,
     data
   );
 
-  persistDatabase();
+  await persistDatabase();
   return data;
 }
 
-function removeSessionParticipant(sessionId, socketId) {
+async function removeSessionParticipant(sessionId, socketId) {
   if (!sessionId) throw new Error('sessionId required');
-  const existing = dbGet('SELECT * FROM sessions WHERE sessionId = :sessionId', { sessionId });
+  const existing = await dbGet('SELECT * FROM sessions WHERE sessionId = :sessionId', { sessionId });
   if (!existing) return null;
 
   const participants = JSON.parse(existing.participants || '[]').filter((p) => p.socketId !== socketId);
@@ -80,7 +80,7 @@ function removeSessionParticipant(sessionId, socketId) {
   const signer = participants.find((p) => p.role === 'signer');
   const active = participants.length > 0 ? 1 : 0;
 
-  dbRun(
+  await dbRun(
     `UPDATE sessions SET participants = :participants, notaryIds = :notaryIds, ownerId = :ownerId, ownerUsername = :ownerUsername, active = :active, updatedAt = :updatedAt WHERE sessionId = :sessionId`,
     {
       participants: JSON.stringify(participants),
@@ -93,7 +93,7 @@ function removeSessionParticipant(sessionId, socketId) {
     }
   );
 
-  persistDatabase();
+  await persistDatabase();
   return { sessionId, participants, notaryIds, ownerId: signer?.userId, ownerUsername: signer?.username, active };
 }
 

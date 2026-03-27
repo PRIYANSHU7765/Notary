@@ -12,7 +12,7 @@ const { hashPassword, verifyPassword, createToken } = require('../services/authS
 const { isValidEmailAddress } = require('../utils/validators');
 
 // POST /api/auth/register
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res) => {
   try {
     const { username, email, password, role } = req.body;
 
@@ -24,7 +24,7 @@ router.post('/register', (req, res) => {
       return res.status(400).json({ ok: false, error: 'Invalid email format' });
     }
 
-    const existing = dbGet('SELECT * FROM users WHERE username = :username OR email = :email', {
+    const existing = await dbGet('SELECT * FROM users WHERE username = :username OR email = :email', {
       username: String(username).trim(),
       email: String(email).trim().toLowerCase(),
     });
@@ -36,7 +36,7 @@ router.post('/register', (req, res) => {
     const userId = crypto.randomUUID();
     const passwordHash = hashPassword(password);
 
-    dbRun(
+    await dbRun(
       'INSERT INTO users (userId, username, email, passwordHash, role, createdAt) VALUES (:userId, :username, :email, :passwordHash, :role, :createdAt)',
       {
         userId,
@@ -48,7 +48,7 @@ router.post('/register', (req, res) => {
       }
     );
 
-    persistDatabase();
+    await persistDatabase();
     appendUserToJson({
       userId,
       username: String(username).trim(),
@@ -58,7 +58,7 @@ router.post('/register', (req, res) => {
       createdAt: now(),
     });
 
-    const user = dbGet('SELECT * FROM users WHERE userId = :userId', { userId });
+    const user = await dbGet('SELECT * FROM users WHERE userId = :userId', { userId });
     const token = createToken(user);
 
     res.status(201).json({
@@ -78,7 +78,7 @@ router.post('/register', (req, res) => {
 });
 
 // POST /api/auth/login
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
 
@@ -86,11 +86,19 @@ router.post('/login', (req, res) => {
       return res.status(400).json({ ok: false, error: 'username and password required' });
     }
 
-    const user = dbGet('SELECT * FROM users WHERE username = :username', {
+    const user = await dbGet('SELECT * FROM users WHERE username = :username', {
       username: String(username).trim(),
     });
 
-    if (!user || !verifyPassword(password, user.passwordHash)) {
+    if (!user) {
+      console.warn('Login failed: user not found for', username);
+      return res.status(401).json({ ok: false, error: 'Invalid credentials' });
+    }
+
+    const valid = verifyPassword(password, user.passwordHash);
+    console.log('Login debug:', { username, stored: user.passwordHash, provided: password, valid });
+
+    if (!valid) {
       return res.status(401).json({ ok: false, error: 'Invalid credentials' });
     }
 
