@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NotaryWorkspaceShell from '../components/NotaryWorkspaceShell';
-import { fetchOwnerDocuments } from '../utils/apiClient';
+import { fetchOwnerDocumentsSummary } from '../utils/apiClient';
 import './NotaryWorkspacePages.css';
 
 const normalize = (value) => String(value || '').trim().toLowerCase();
@@ -37,7 +37,7 @@ const OwnerMeetingsPage = () => {
     const load = async () => {
       try {
         setLoading(true);
-        const response = await fetchOwnerDocuments({});
+        const response = await fetchOwnerDocumentsSummary({});
         if (!active) return;
         setDocuments(Array.isArray(response) ? response : []);
       } catch (err) {

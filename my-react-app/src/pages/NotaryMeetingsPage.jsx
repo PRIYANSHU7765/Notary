@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NotaryWorkspaceShell from '../components/NotaryWorkspaceShell';
 import {
-  fetchOwnerDocuments,
+  fetchOwnerDocumentsSummary,
   fetchSessionRecordings,
   markOwnerDocumentSessionStarted,
   scheduleOwnerDocumentMeeting,
@@ -44,7 +44,7 @@ const NotaryMeetingsPage = () => {
   }, []);
 
   const reloadDocuments = async () => {
-    const response = await fetchOwnerDocuments({});
+    const response = await fetchOwnerDocumentsSummary({});
     setDocuments(Array.isArray(response) ? response : []);
   };
 
@@ -55,7 +55,7 @@ const NotaryMeetingsPage = () => {
     const load = async () => {
       try {
         setLoading(true);
-        const response = await fetchOwnerDocuments({});
+        const response = await fetchOwnerDocumentsSummary({});
         if (!active) return;
         setDocuments(Array.isArray(response) ? response : []);
       } catch (err) {

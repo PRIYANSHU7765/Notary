@@ -3554,13 +3554,29 @@ app.put('/api/signer-documents/:id/notarize', requireAuth, requireRole(['notary'
 });
 
 // SIGNER notarize endpoint - Signer marks their document as notarized (ready for notary review)
-app.post('/api/signer-documents/:id/signer-notarize', requireAuth, requireRole(['signer']), requireKbaApproved, (req, res) => {
+app.post('/api/signer-documents/:id/signer-notarize', requireAuth, requireRole(['signer']), requireKbaApproved, async (req, res) => {
   try {
     const { id } = req.params;
-    const existing = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+    
+    // Retry logic with exponential backoff: if document not found immediately, wait and retry (handles race conditions)
+    let existing = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+    
+    if (!existing) {
+      // Try multiple times with increasing delays - handles slow database writes after freshly uploaded documents
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        const delayMs = 200 * attempt; // 200ms, 400ms, 600ms, 800ms, 1000ms
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        existing = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+        if (existing) {
+          console.log(`📌 Document found on retry attempt ${attempt} after ${delayMs}ms: ${id}`);
+          break;
+        }
+      }
+    }
 
     if (!existing) {
-      return res.status(404).json({ error: 'Document not found' });
+      console.error(`❌ Document not found after all retry attempts: ${id} for user ${req.auth.userId}`);
+      return res.status(404).json({ error: 'Document not found', documentId: id });
     }
 
     // Verify signer owns this document
@@ -3663,7 +3679,7 @@ app.post('/api/signer-documents/:id/signer-notarize', requireAuth, requireRole([
 });
 
 // Signer document endpoints (stored separately from session documents)
-app.post('/api/signer-documents', requireAuth, requireRole(['signer']), requireKbaApproved, (req, res) => {
+app.post('/api/signer-documents', requireAuth, requireRole(['signer']), requireKbaApproved, async (req, res) => {
   try {
     const {
       id,
@@ -3754,7 +3770,21 @@ app.post('/api/signer-documents', requireAuth, requireRole(['signer']), requireK
     );
     persistDatabase();
 
-    const document = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+    // Verify the document was actually inserted
+    let document = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+    if (!document) {
+      // If not found immediately, retry with delays to handle database write latency
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+        document = dbGet('SELECT * FROM owner_documents WHERE id = :id', { id });
+        if (document) break;
+      }
+    }
+
+    if (!document) {
+      console.error(`❌ Failed to retrieve inserted document: ${id}. Database state may be corrupted.`);
+      return res.status(500).json({ error: 'Failed to save signer document - retrieval failed', id });
+    }
 
     console.log(`📄 Signer document saved: ${name} by ${safeOwnerName}`);
 

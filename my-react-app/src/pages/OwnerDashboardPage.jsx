@@ -512,8 +512,9 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
       try {
         const backendDocs = await fetchOwnerDocuments({ ownerId: authUser.userId });
         if (Array.isArray(backendDocs)) {
-          setDocs(backendDocs);
-          saveDocs(backendDocs);
+          const withSyncFlag = backendDocs.map((d) => ({ ...d, syncedWithBackend: true }));
+          setDocs(withSyncFlag);
+          saveDocs(withSyncFlag);
         }
       } catch (err) {
         console.warn('[SIGNER] Failed to load documents from backend:', err?.message || err);
@@ -894,7 +895,7 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
         const backendDocs = await fetchOwnerDocuments({ ownerId: authUser.userId });
         if (cancelled || !Array.isArray(backendDocs) || backendDocs.length === 0) return;
 
-        const backendById = new Map(backendDocs.map((d) => [d.id, d]));
+        const backendById = new Map(backendDocs.map((d) => [d.id, { ...d, syncedWithBackend: true }]));
         setDocs((prevDocs) => {
           let changed = false;
           const nextDocs = prevDocs.map((doc) => {
@@ -1575,13 +1576,16 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
         notarized: false,
         dataUrl: ev.target.result,
         sessionId: currentSessionId,
+        syncedWithBackend: false,
       };
       const previousDocs = docs;
       const updated = [newDoc, ...previousDocs];
       setDocs(updated);
       saveDocs(updated);
 
-      // Persist uploaded document to backend immediately.
+      // Persist uploaded document to backend (async, don't block UI)
+      let backendSaveFailed = false;
+      
       try {
         await saveOwnerDocument({
           id: newDoc.id,
@@ -1596,18 +1600,38 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
           status: 'uploaded',
         });
 
-        const backendDocs = await fetchOwnerDocuments({ ownerId: authUser.userId });
-        if (Array.isArray(backendDocs)) {
-          setDocs(backendDocs);
-          saveDocs(backendDocs);
-        }
+        // Mark the document as synced after successful backend save
+        setDocs((currentDocs) => {
+          const updated = currentDocs.map((d) =>
+            d.id === newDoc.id ? { ...d, syncedWithBackend: true } : d
+          );
+          saveDocs(updated);
+          return updated;
+        });
 
-        console.log('✅ [SIGNER] Uploaded document saved and synced from backend:', newDoc.name);
+        console.log('✅ [SIGNER] Uploaded document saved to backend:', newDoc.name);
       } catch (error) {
         console.warn('⚠️ [SIGNER] Failed to save uploaded document to backend:', error);
+        backendSaveFailed = true;
         setDocs(previousDocs);
         saveDocs(previousDocs);
         alert('Upload failed to save in database. Please try again.');
+      }
+
+      // Background: Refresh document list after a short delay if save succeeded
+      if (!backendSaveFailed) {
+        setTimeout(async () => {
+          try {
+            const freshDocs = await fetchOwnerDocuments({ ownerId: authUser.userId, bypassCache: true });
+            if (Array.isArray(freshDocs) && freshDocs.length > 0) {
+              const withSyncFlag = freshDocs.map((d) => ({ ...d, syncedWithBackend: true }));
+              setDocs(withSyncFlag);
+              saveDocs(withSyncFlag);
+            }
+          } catch (err) {
+            console.warn('⚠️ [SIGNER] Background refresh failed:', err);
+          }
+        }, 1000); // Refresh list after 1 second in background
       }
     };
     reader.readAsDataURL(file);
@@ -1749,46 +1773,60 @@ const OwnerDashboardPage = ({ setHideSidebar }) => {
         return;
       }
 
-      const latestDocs = await fetchOwnerDocuments({ ownerId: authUser.userId });
-      const targetFromBackend = Array.isArray(latestDocs)
-        ? latestDocs.find((d) => String(d.id) === String(notarizingDoc.id))
-        : null;
+      // Use the document from state - it's already synced from upload
+      const targetDocument = docs.find((d) => String(d.id) === String(notarizingDoc.id)) || notarizingDoc;
 
-      if (Array.isArray(latestDocs) && latestDocs.length > 0) {
-        setDocs(latestDocs);
-        saveDocs(latestDocs);
+      if (!targetDocument?.id) {
+        alert('Document not found. Please try again.');
+        setNotarizingDoc(null);
+        return;
       }
 
-      const targetDocumentId = targetFromBackend ? targetFromBackend.id : notarizingDoc.id;
+      const targetDocumentId = targetDocument.id;
       console.log('📋 [SIGNER] Sending document for notary review:', targetDocumentId);
 
       const result = await notarizeOwnerDocument(targetDocumentId);
 
       const updatedDoc = {
-        ...(targetFromBackend || notarizingDoc),
+        ...targetDocument,
         ...result,
         status: result.status || 'pending_review',
         notaryReview: result.notaryReview || 'pending',
         notarized: Boolean(result.notarized),
       };
 
-      const updated = docs.map((d) =>
-        String(d.id) === String(targetDocumentId) || String(d.id) === String(notarizingDoc.id)
-          ? updatedDoc
-          : d
-      );
-      setDocs(updated);
-      saveDocs(updated);
+      setDocs((previousDocs) => {
+        const updated = previousDocs.map((d) =>
+          String(d.id) === String(targetDocumentId) || String(d.id) === String(notarizingDoc.id)
+            ? updatedDoc
+            : d
+        );
+        saveDocs(updated);
+        return updated;
+      });
 
       setNotarizingDoc(null);
     } catch (error) {
       console.error('❌ [SIGNER] Notarization failed:', error);
 
+      if (String(error?.message || '').includes('HTTP 404')) {
+        const latestDocs = await fetchOwnerDocuments({ ownerId: authUser.userId, bypassCache: true });
+        if (Array.isArray(latestDocs)) {
+          const withSyncFlag = latestDocs.map((d) => ({ ...d, syncedWithBackend: true }));
+          setDocs(withSyncFlag);
+          saveDocs(withSyncFlag);
+        }
+        alert('This document is not available on the server anymore. The list has been refreshed. Please try with a current row.');
+        setNotarizingDoc(null);
+        return;
+      }
+
       if (String(error?.message || '').includes('HTTP 409')) {
         const latestDocs = await fetchOwnerDocuments({ ownerId: authUser.userId });
         if (Array.isArray(latestDocs) && latestDocs.length > 0) {
-          setDocs(latestDocs);
-          saveDocs(latestDocs);
+          const withSyncFlag = latestDocs.map((d) => ({ ...d, syncedWithBackend: true }));
+          setDocs(withSyncFlag);
+          saveDocs(withSyncFlag);
         }
         alert('This document is already in progress or finalized. The list has been refreshed. Please notarize only rows with status "Waiting for notary".');
       } else {
