@@ -16,7 +16,7 @@ process.on('uncaughtException', (err) => {
 
 process.on('unhandledRejection', (reason) => {
   console.error('❌ Unhandled rejection:', reason);
-});
+}); 
 
 const express = require('express');
 const http = require('http');

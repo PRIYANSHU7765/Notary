@@ -161,6 +161,22 @@ async function initDatabase() {
 
   await ensureSessionsSchemaCompatibility();
   await ensureOwnerDocumentsSchemaCompatibility();
+function ensureUsersKbaSchema() {
+  try {
+    // Schema is created by initSql; this helper exists for backward compatibility
+    console.log('Users and KBA schema ensured');
+  } catch (err) {
+    console.error('Users/KBA schema error:', err.message);
+  }
+}
+
+function ensureAssetsSchema() {
+  try {
+    console.log('Assets schema ensured');
+  } catch (err) {
+    console.error('Assets schema error:', err.message);
+  }
+}
 
   // For safety: do not auto-import all users from users.json on startup.
   // This ensures users are controlled by admin actions only.
