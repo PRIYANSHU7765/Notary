@@ -187,6 +187,15 @@ function ensureOwnerDocumentsSchema() {
   }
 }
 
+function ensureUsersKbaSchema() {
+  try {
+    // Schema is created by initSql; this helper exists for backward compatibility
+    console.log('Users and KBA schema ensured');
+  } catch (err) {
+    console.error('Users/KBA schema error:', err.message);
+  }
+}
+
 function ensureAssetsSchema() {
   try {
     console.log('Assets schema ensured');
