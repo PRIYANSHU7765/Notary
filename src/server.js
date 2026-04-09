@@ -52,6 +52,8 @@ const server = http.createServer(app);
 const corsOptions = {
   origin: (origin, callback) => {
     if (isAllowedOrigin(origin)) return callback(null, true);
+    console.error('❌ CORS blocked origin:', origin);
+    console.error('✅ Allowed origins:', STATIC_ALLOWED_ORIGINS);
     return callback(new Error(`CORS blocked origin: ${origin}`));
   },
   methods: ['GET', 'POST', 'DELETE', 'PUT'],

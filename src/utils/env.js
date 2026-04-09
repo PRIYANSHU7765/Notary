@@ -9,7 +9,7 @@ const normalizeUrl = (value) => {
   if (!value || typeof value !== 'string') return '';
   const trimmed = value.trim();
   if (!trimmed) return '';
-  return trimmed.replace(/\/$/, '');
+  return trimmed.replace(/\/$/, '').toLowerCase();
 };
 
 const parsePort = (value, fallback) => {
@@ -28,9 +28,10 @@ const isDevTunnelOrigin = (origin) => {
 };
 
 const isAllowedOrigin = (origin) => {
-  if (!origin) return true;
-  if (STATIC_ALLOWED_ORIGINS.includes(origin)) return true;
-  if (isDevTunnelOrigin(origin)) return true;
+  const normalizedOrigin = normalizeUrl(origin);
+  if (!normalizedOrigin) return true;
+  if (STATIC_ALLOWED_ORIGINS.includes(normalizedOrigin)) return true;
+  if (isDevTunnelOrigin(normalizedOrigin)) return true;
   return false;
 };
 
