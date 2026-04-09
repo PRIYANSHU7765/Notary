@@ -5,6 +5,13 @@
 
 const path = require('path');
 
+const normalizeUrl = (value) => {
+  if (!value || typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  return trimmed.replace(/\/$/, '');
+};
+
 const parsePort = (value, fallback) => {
   const port = Number(value);
   if (!Number.isInteger(port) || port < 0 || port > 65535) return fallback;
@@ -29,7 +36,7 @@ const isAllowedOrigin = (origin) => {
 
 const PORT = parsePort(process.env.PORT, 5000);
 const NODE_ENV = process.env.NODE_ENV || 'development';
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+const FRONTEND_URL = normalizeUrl(process.env.FRONTEND_URL) || 'http://localhost:3000';
 
 const STATIC_ALLOWED_ORIGINS = [
   'http://localhost:3000',
